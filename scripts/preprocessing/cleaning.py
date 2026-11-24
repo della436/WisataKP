@@ -2,6 +2,7 @@
 import pandas as pd
 from pathlib import Path
 import re
+import ast
 import unicodedata
 
 
@@ -9,7 +10,11 @@ import unicodedata
 # KONFIGURASI PATH
 # =========================================================
 
-BASE_DIR = Path(__file__).resolve().parent
+# cleaning.py berada di:
+# WisataKP/scripts/preprocessing/cleaning.py
+# parents[2] mengarah ke root project WisataKP
+
+BASE_DIR = Path(__file__).resolve().parents[2]
 
 RAW_DIR = BASE_DIR / "data" / "raw"
 PROCESSED_DIR = BASE_DIR / "data" / "processed"
@@ -33,7 +38,9 @@ DESTINASI_COLUMNS = [
     "categoryName",
     "address",
     "totalScore",
-    "reviewsCount"
+    "reviewsCount",
+    "latitude",
+    "longitude"
 ]
 
 
@@ -71,6 +78,61 @@ def clean_whitespace(value):
 
 
 # =========================================================
+# FUNGSI EKSTRAKSI KOORDINAT
+# =========================================================
+
+def extract_coordinates(location):
+    """
+    Mengekstrak latitude dan longitude dari kolom location.
+
+    Contoh format data:
+    {'lat': -7.9080407, 'lng': 110.0560952}
+
+    Mengembalikan:
+    (latitude, longitude)
+    """
+
+    if pd.isna(location):
+        return None, None
+
+    try:
+        # Jika location sudah berbentuk dictionary
+        if isinstance(location, dict):
+            location_data = location
+
+        # Jika location berbentuk string dictionary
+        elif isinstance(location, str):
+            location_data = ast.literal_eval(location)
+
+        else:
+            return None, None
+
+        if not isinstance(location_data, dict):
+            return None, None
+
+        latitude = location_data.get("lat")
+        longitude = location_data.get("lng")
+
+        if latitude is None or longitude is None:
+            return None, None
+
+        latitude = float(latitude)
+        longitude = float(longitude)
+
+        # Validasi rentang koordinat
+        if not (-90 <= latitude <= 90):
+            return None, None
+
+        if not (-180 <= longitude <= 180):
+            return None, None
+
+        return latitude, longitude
+
+    except (ValueError, TypeError, SyntaxError):
+        return None, None
+
+
+# =========================================================
 # CLEANING DATA DESTINASI
 # =========================================================
 
@@ -85,12 +147,21 @@ def cleaning_destinasi(df):
     print(f"Data awal: {initial_rows}")
 
     # -----------------------------------------------------
-    # 1. Validasi kolom
+    # 1. VALIDASI KOLOM
     # -----------------------------------------------------
+
+    required_columns = [
+        "title",
+        "categoryName",
+        "address",
+        "totalScore",
+        "reviewsCount",
+        "location"
+    ]
 
     missing_columns = [
         column
-        for column in DESTINASI_COLUMNS
+        for column in required_columns
         if column not in df.columns
     ]
 
@@ -100,13 +171,35 @@ def cleaning_destinasi(df):
         )
 
     # -----------------------------------------------------
-    # 2. Seleksi kolom
+    # 2. EKSTRAKSI KOORDINAT
+    # -----------------------------------------------------
+
+    print("Mengekstrak koordinat destinasi...")
+
+    df = df.copy()
+
+    # Menghasilkan pasangan latitude dan longitude
+    coordinates = df["location"].apply(
+        extract_coordinates
+    )
+
+    # Memisahkan koordinat ke dua kolom
+    df["latitude"] = coordinates.apply(
+        lambda x: x[0]
+    )
+
+    df["longitude"] = coordinates.apply(
+        lambda x: x[1]
+    )
+
+    # -----------------------------------------------------
+    # 3. SELEKSI KOLOM
     # -----------------------------------------------------
 
     df = df[DESTINASI_COLUMNS].copy()
 
     # -----------------------------------------------------
-    # 3. Cleaning whitespace
+    # 4. CLEANING WHITESPACE
     # -----------------------------------------------------
 
     text_columns = [
@@ -116,10 +209,12 @@ def cleaning_destinasi(df):
     ]
 
     for column in text_columns:
-        df[column] = df[column].apply(clean_whitespace)
+        df[column] = df[column].apply(
+            clean_whitespace
+        )
 
     # -----------------------------------------------------
-    # 4. Menghapus nama destinasi kosong
+    # 5. MENGHAPUS NAMA DESTINASI KOSONG
     # -----------------------------------------------------
 
     missing_title = (
@@ -132,7 +227,7 @@ def cleaning_destinasi(df):
     df = df.loc[~missing_title].copy()
 
     # -----------------------------------------------------
-    # 5. Menghapus alamat kosong
+    # 6. MENGHAPUS ALAMAT KOSONG
     # -----------------------------------------------------
 
     missing_address = (
@@ -145,7 +240,7 @@ def cleaning_destinasi(df):
     df = df.loc[~missing_address].copy()
 
     # -----------------------------------------------------
-    # 6. Pemeriksaan duplikasi nama
+    # 7. PEMERIKSAAN DUPLIKASI NAMA
     # -----------------------------------------------------
 
     df["title_normalized"] = (
@@ -166,7 +261,7 @@ def cleaning_destinasi(df):
     )
 
     # -----------------------------------------------------
-    # 7. Menghapus duplikasi baris identik
+    # 8. MENGHAPUS DUPLIKASI BARIS IDENTIK
     # -----------------------------------------------------
 
     duplicate_rows = df.duplicated(
@@ -179,10 +274,12 @@ def cleaning_destinasi(df):
     df = df.loc[~duplicate_rows].copy()
 
     # Menghapus kolom bantuan
-    df = df.drop(columns=["title_normalized"])
+    df = df.drop(
+        columns=["title_normalized"]
+    )
 
     # -----------------------------------------------------
-    # 8. Validasi numerik
+    # 9. VALIDASI NUMERIK
     # -----------------------------------------------------
 
     df["totalScore"] = pd.to_numeric(
@@ -195,23 +292,60 @@ def cleaning_destinasi(df):
         errors="coerce"
     )
 
+    df["latitude"] = pd.to_numeric(
+        df["latitude"],
+        errors="coerce"
+    )
+
+    df["longitude"] = pd.to_numeric(
+        df["longitude"],
+        errors="coerce"
+    )
+
     # -----------------------------------------------------
-    # 9. Ringkasan
+    # 10. VALIDASI RENTANG KOORDINAT
+    # -----------------------------------------------------
+
+    invalid_coordinates = (
+        df["latitude"].notna()
+        & ~df["latitude"].between(-90, 90)
+    ) | (
+        df["longitude"].notna()
+        & ~df["longitude"].between(-180, 180)
+    )
+
+    invalid_coordinate_count = invalid_coordinates.sum()
+
+    df.loc[
+        invalid_coordinates,
+        ["latitude", "longitude"]
+    ] = None
+
+    # -----------------------------------------------------
+    # 11. RINGKASAN
     # -----------------------------------------------------
 
     final_rows = len(df)
 
     print("\nRingkasan cleaning destinasi")
     print("-" * 40)
-    print(f"Data awal                  : {initial_rows}")
-    print(f"Nama kosong dihapus        : {removed_title}")
-    print(f"Alamat kosong dihapus      : {removed_address}")
-    print(f"Duplikasi baris dihapus   : {removed_duplicate_rows}")
-    print(f"Kandidat nama duplikat     : {duplicate_name_count}")
-    print(f"Data akhir                 : {final_rows}")
+
+    print(f"Data awal                 : {initial_rows}")
+    print(f"Nama kosong dihapus       : {removed_title}")
+    print(f"Alamat kosong dihapus     : {removed_address}")
+    print(f"Duplikasi baris dihapus  : {removed_duplicate_rows}")
+    print(f"Kandidat nama duplikat   : {duplicate_name_count}")
+    print(f"Koordinat tidak valid    : {invalid_coordinate_count}")
+    print(f"Data akhir               : {final_rows}")
 
     print("\nMissing value:")
     print(df.isnull().sum())
+
+    print("\nData dengan koordinat:")
+    print(df["latitude"].notna().sum())
+
+    print("\nData tanpa koordinat:")
+    print(df["latitude"].isna().sum())
 
     if not duplicate_names.empty:
 
@@ -241,7 +375,7 @@ def cleaning_review(df):
     print(f"Data awal: {initial_rows}")
 
     # -----------------------------------------------------
-    # 1. Validasi kolom
+    # 1. VALIDASI KOLOM
     # -----------------------------------------------------
 
     missing_columns = [
@@ -256,13 +390,13 @@ def cleaning_review(df):
         )
 
     # -----------------------------------------------------
-    # 2. Seleksi kolom
+    # 2. SELEKSI KOLOM
     # -----------------------------------------------------
 
     df = df[REVIEW_COLUMNS].copy()
 
     # -----------------------------------------------------
-    # 3. Cleaning whitespace
+    # 3. CLEANING WHITESPACE
     # -----------------------------------------------------
 
     df["id_destinasi"] = df["id_destinasi"].apply(
@@ -278,7 +412,7 @@ def cleaning_review(df):
     )
 
     # -----------------------------------------------------
-    # 4. Menghapus review kosong
+    # 4. MENGHAPUS REVIEW KOSONG
     # -----------------------------------------------------
 
     missing_review = (
@@ -291,7 +425,7 @@ def cleaning_review(df):
     df = df.loc[~missing_review].copy()
 
     # -----------------------------------------------------
-    # 5. Menghapus data tanpa ID destinasi
+    # 5. MENGHAPUS DATA TANPA ID DESTINASI
     # -----------------------------------------------------
 
     missing_id = (
@@ -304,7 +438,7 @@ def cleaning_review(df):
     df = df.loc[~missing_id].copy()
 
     # -----------------------------------------------------
-    # 6. Menghapus data tanpa nama destinasi
+    # 6. MENGHAPUS DATA TANPA NAMA DESTINASI
     # -----------------------------------------------------
 
     missing_name = (
@@ -317,7 +451,7 @@ def cleaning_review(df):
     df = df.loc[~missing_name].copy()
 
     # -----------------------------------------------------
-    # 7. Validasi rating
+    # 7. VALIDASI RATING
     # -----------------------------------------------------
 
     df["rating"] = pd.to_numeric(
@@ -335,7 +469,7 @@ def cleaning_review(df):
     df = df.loc[~invalid_rating].copy()
 
     # -----------------------------------------------------
-    # 8. Menghapus duplikasi data review identik
+    # 8. MENGHAPUS DUPLIKASI REVIEW IDENTIK
     # -----------------------------------------------------
 
     duplicate_reviews = df.duplicated(
@@ -348,19 +482,20 @@ def cleaning_review(df):
     df = df.loc[~duplicate_reviews].copy()
 
     # -----------------------------------------------------
-    # 9. Reset index
+    # 9. RESET INDEX
     # -----------------------------------------------------
 
     df = df.reset_index(drop=True)
 
     # -----------------------------------------------------
-    # 10. Ringkasan cleaning
+    # 10. RINGKASAN CLEANING
     # -----------------------------------------------------
 
     final_rows = len(df)
 
     print("\nRingkasan cleaning review")
     print("-" * 40)
+
     print(f"Data awal                     : {initial_rows}")
     print(f"Review kosong dihapus          : {removed_empty_review}")
     print(f"ID destinasi kosong dihapus   : {removed_missing_id}")
@@ -388,9 +523,9 @@ def cleaning_review(df):
 
 def main():
 
-    # =====================================================
+    # -----------------------------------------------------
     # 1. MEMERIKSA FILE RAW
-    # =====================================================
+    # -----------------------------------------------------
 
     if not DESTINASI_RAW_FILE.exists():
         raise FileNotFoundError(
@@ -404,9 +539,9 @@ def main():
             f"{REVIEW_RAW_FILE}"
         )
 
-    # =====================================================
+    # -----------------------------------------------------
     # 2. MEMBACA DATA RAW
-    # =====================================================
+    # -----------------------------------------------------
 
     print("Membaca dataset raw...")
 
@@ -418,25 +553,25 @@ def main():
         REVIEW_RAW_FILE
     )
 
-    # =====================================================
+    # -----------------------------------------------------
     # 3. CLEANING DESTINASI
-    # =====================================================
+    # -----------------------------------------------------
 
     df_destinasi_clean = cleaning_destinasi(
         df_destinasi_raw
     )
 
-    # =====================================================
+    # -----------------------------------------------------
     # 4. CLEANING REVIEW
-    # =====================================================
+    # -----------------------------------------------------
 
     df_review_clean = cleaning_review(
         df_review_raw
     )
 
-    # =====================================================
+    # -----------------------------------------------------
     # 5. MEMBUAT FOLDER OUTPUT
-    # =====================================================
+    # -----------------------------------------------------
 
     DESTINASI_OUTPUT_DIR.mkdir(
         parents=True,
@@ -448,9 +583,9 @@ def main():
         exist_ok=True
     )
 
-    # =====================================================
+    # -----------------------------------------------------
     # 6. MENYIMPAN HASIL CLEANING
-    # =====================================================
+    # -----------------------------------------------------
 
     df_destinasi_clean.to_csv(
         DESTINASI_OUTPUT_FILE,
@@ -462,9 +597,11 @@ def main():
         index=False
     )
 
-    # =====================================================
+    print("\nFile berhasil disimpan.")
+
+    # -----------------------------------------------------
     # 7. PREVIEW DATA
-    # =====================================================
+    # -----------------------------------------------------
 
     print("\n" + "=" * 60)
     print("PREVIEW DATA DESTINASI CLEAN")
@@ -484,9 +621,9 @@ def main():
         .to_string(index=False)
     )
 
-    # =====================================================
+    # -----------------------------------------------------
     # 8. SELESAI
-    # =====================================================
+    # -----------------------------------------------------
 
     print("\n" + "=" * 60)
     print("DATA CLEANING WISATAKP SELESAI")

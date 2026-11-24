@@ -4,7 +4,7 @@ import requests
 import pandas as pd
 
 from datetime import datetime
-from crawler_destinasi.config import (
+from scripts.crawler.config import (
     APIFY_API_TOKEN,
     ACTOR_ID,
     SEARCH_LOCATION

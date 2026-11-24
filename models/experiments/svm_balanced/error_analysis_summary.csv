@@ -1,0 +1,6 @@
+error_type,count
+Neutral -> Positive,32
+Positive -> Neutral,22
+Negative -> Neutral,6
+Negative -> Positive,5
+Neutral -> Negative,2

@@ -1,0 +1,43 @@
+/* =====================================================
+   WISATAKP SIDEBAR
+   ===================================================== */
+
+section[data-testid="stSidebar"] {
+    background-color: #ffffff;
+    border-right: 1px solid #e6edf2;
+}
+
+section[data-testid="stSidebar"] > div {
+    padding-top: 1.2rem;
+}
+
+/* Sidebar navigation buttons */
+
+section[data-testid="stSidebar"] .stButton > button {
+    text-align: left;
+    background: transparent;
+    border: none;
+    border-radius: 11px;
+    color: #53687b;
+    padding: 10px 14px;
+    font-weight: 500;
+}
+
+section[data-testid="stSidebar"] .stButton > button:hover {
+    background: #eff6f8;
+    color: #173550;
+}
+
+/* Footer */
+
+.sidebar-footer {
+    color: #8795a2;
+    font-size: 12px;
+    text-align: center;
+    line-height: 1.8;
+    padding: 20px 5px;
+}
+
+section[data-testid="stSidebar"] hr {
+    border-color: #e8edf2;
+}

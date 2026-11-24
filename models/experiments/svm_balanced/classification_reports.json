@@ -1,0 +1,68 @@
+{
+    "Linear SVM Baseline": {
+        "Negative": {
+            "precision": 0.9,
+            "recall": 0.34615384615384615,
+            "f1-score": 0.5,
+            "support": 26.0
+        },
+        "Neutral": {
+            "precision": 0.7766990291262136,
+            "recall": 0.6956521739130435,
+            "f1-score": 0.7339449541284404,
+            "support": 115.0
+        },
+        "Positive": {
+            "precision": 0.8178137651821862,
+            "recall": 0.9223744292237442,
+            "f1-score": 0.8669527896995708,
+            "support": 219.0
+        },
+        "accuracy": 0.8083333333333333,
+        "macro avg": {
+            "precision": 0.8315042647694666,
+            "recall": 0.6547268164302112,
+            "f1-score": 0.7002992479426705,
+            "support": 360.0
+        },
+        "weighted avg": {
+            "precision": 0.810615563678926,
+            "recall": 0.8083333333333333,
+            "f1-score": 0.7979620296360462,
+            "support": 360.0
+        }
+    },
+    "Linear SVM Balanced": {
+        "Negative": {
+            "precision": 0.8823529411764706,
+            "recall": 0.5769230769230769,
+            "f1-score": 0.6976744186046512,
+            "support": 26.0
+        },
+        "Neutral": {
+            "precision": 0.7431192660550459,
+            "recall": 0.7043478260869566,
+            "f1-score": 0.7232142857142857,
+            "support": 115.0
+        },
+        "Positive": {
+            "precision": 0.8418803418803419,
+            "recall": 0.8995433789954338,
+            "f1-score": 0.869757174392936,
+            "support": 219.0
+        },
+        "accuracy": 0.8138888888888889,
+        "macro avg": {
+            "precision": 0.8224508497039528,
+            "recall": 0.7269380940018224,
+            "f1-score": 0.7635486262372909,
+            "support": 360.0
+        },
+        "weighted avg": {
+            "precision": 0.8132546859408706,
+            "recall": 0.8138888888888889,
+            "f1-score": 0.8105166637025465,
+            "support": 360.0
+        }
+    }
+}

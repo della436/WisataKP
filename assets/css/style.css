@@ -1,0 +1,278 @@
+/* =========================================================
+   WISATAKP - MAIN DASHBOARD
+   ========================================================= */
+
+/* ---------- PAGE TITLE ---------- */
+
+.dashboard-title {
+    font-size: 30px;
+    font-weight: 700;
+    color: #243447;
+    margin-bottom: 24px;
+}
+
+
+/* ---------- SECTION ---------- */
+
+.dashboard-section {
+    background: #FFFFFF;
+    border: 1px solid #E8EDF2;
+    border-radius: 18px;
+    padding: 18px 22px;
+    margin: 18px 0 14px 0;
+}
+
+.section-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #84909D;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+}
+
+.section-subtitle {
+    font-size: 21px;
+    font-weight: 700;
+    color: #273444;
+    margin-bottom: 6px;
+}
+
+.section-description {
+    font-size: 14px;
+    color: #7B8794;
+    line-height: 1.6;
+    margin-bottom: 4px;
+}
+
+
+/* ---------- KPI SECTION ---------- */
+
+.kpi-section {
+    background: #EAF2FC;
+    border-radius: 18px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+}
+
+.kpi-section-label {
+    color: #5A82B5;
+}
+
+.kpi-card {
+    border-radius: 16px;
+    padding: 20px 24px;
+    min-height: 135px;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+
+    transition: transform 0.2s ease;
+}
+
+.kpi-card:hover {
+    transform: translateY(-2px);
+}
+
+.kpi-blue {
+    background: #DCEAF8;
+}
+
+.kpi-green {
+    background: #DFEFE5;
+}
+
+.kpi-label {
+    font-size: 17px;
+    font-weight: 600;
+    color: #344252;
+    margin-bottom: 12px;
+}
+
+.kpi-value {
+    font-size: 42px;
+    font-weight: 750;
+    line-height: 1.1;
+}
+
+.kpi-blue .kpi-value {
+    color: #456F9C;
+}
+
+.kpi-green .kpi-value {
+    color: #43805C;
+}
+
+
+/* ---------- REVIEW LEGEND ---------- */
+
+.review-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 14px;
+    color: #6F7B86;
+    font-size: 13px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.review-high {
+    background: #7198CC;
+}
+
+.review-medium {
+    background: #75AB88;
+}
+
+.review-low {
+    background: #E9B566;
+}
+
+
+/* ---------- EXPANDER ---------- */
+
+div[data-testid="stExpander"] {
+    border: 1px solid #E6EBF0;
+    border-radius: 12px;
+    background: #FFFFFF;
+    overflow: hidden;
+}
+
+div[data-testid="stExpander"] summary {
+    font-size: 14px;
+    font-weight: 600;
+    color: #374454;
+}
+
+div[data-testid="stExpander"] summary:hover {
+    color: #5B86B5;
+}
+
+
+/* ---------- SENTIMENT ---------- */
+
+.sentiment-card {
+    border-radius: 16px;
+    padding: 20px;
+    min-height: 125px;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+
+    transition: transform 0.2s ease;
+}
+
+.sentiment-card:hover {
+    transform: translateY(-2px);
+}
+
+.sentiment-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+}
+
+.sentiment-value {
+    font-size: 36px;
+    font-weight: 750;
+    line-height: 1;
+}
+
+.sentiment-positive {
+    background: #E2F1E6;
+    color: #43875C;
+}
+
+.sentiment-neutral {
+    background: #FFF0DB;
+    color: #B37B30;
+}
+
+.sentiment-negative {
+    background: #F8E4E4;
+    color: #C35454;
+}
+
+
+/* ---------- CHART ---------- */
+
+div[data-testid="stVegaLiteChart"] {
+    background: transparent;
+    border-radius: 14px;
+}
+
+
+/* ---------- COLUMN SPACING ---------- */
+
+div[data-testid="stHorizontalBlock"] {
+    gap: 12px;
+}
+
+
+/* ---------- FOOTER ---------- */
+
+.dashboard-footer {
+    text-align: center;
+    padding: 35px 10px 15px;
+    color: #8B98A5;
+    font-size: 13px;
+}
+
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+
+@media screen and (max-width: 768px) {
+
+    .dashboard-title {
+        font-size: 24px;
+    }
+
+    .section-subtitle {
+        font-size: 18px;
+    }
+
+    .section-description {
+        font-size: 13px;
+    }
+
+    .kpi-card {
+        padding: 16px;
+        min-height: 110px;
+    }
+
+    .kpi-value {
+        font-size: 32px;
+    }
+
+    .sentiment-card {
+        padding: 14px;
+        min-height: 100px;
+    }
+
+    .sentiment-value {
+        font-size: 28px;
+    }
+
+    .dashboard-section {
+        padding: 14px;
+    }
+
+    .kpi-section {
+        padding: 14px;
+    }
+}
