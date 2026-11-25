@@ -1,710 +1,1146 @@
+# ============================================================
+# WISATAKP - EXPLORE DESTINATIONS
+# ============================================================
 
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-from pathlib import Path
+import sqlite3
+import joblib
+import random
 import re
 
+from pathlib import Path
+from datetime import datetime
+from difflib import SequenceMatcher
 
-# ==========================================
-# PAGE CONFIG
-# ==========================================
-
-st.set_page_config(
-    page_title="Sentiment Analytics | WisataKP",
-    page_icon="📊",
-    layout="wide"
-)
+import folium
+from streamlit_folium import st_folium
 
 
-# ==========================================
-# PATH
-# ==========================================
+# ============================================================
+# 1. PATH
+# ============================================================
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 
-REVIEW_DIR = BASE_DIR / "data" / "processed" / "reviews"
+DESTINATION_FILE = BASE_DIR / "data" / "processed" / "destinasi" / "destinasi_clean.csv"
+REVIEW_FILE = BASE_DIR / "data" / "processed" / "reviews" / "wisata_kp_reviews_labeled.csv"
+MODEL_FILE = BASE_DIR / "models" / "final" / "sentiment_model.pkl"
+VECTORIZER_FILE = BASE_DIR / "models" / "final" / "tfidf_vectorizer.pkl"
+DB_FILE = BASE_DIR / "data" / "user_reviews.db"
 
-# Kandidat file dataset hasil labeling
-DATA_CANDIDATES = [
-    REVIEW_DIR / "wisata_kp_reviews_sentiment.csv",
-    REVIEW_DIR / "reviews_sentiment.csv",
-    REVIEW_DIR / "wisata_kp_reviews_labeled.csv",
-    REVIEW_DIR / "reviews_labeled.csv",
-    REVIEW_DIR / "sentiment_clean.csv",
-]
+def load_css():
+    BASE_DIR = Path(__file__).resolve().parent
 
+    css_files = [
+        BASE_DIR / "assets" / "css" / "style.css",
+        BASE_DIR / "assets" / "css" / "components.css",
+    ]
 
-# ==========================================
-# CUSTOM CSS
-# ==========================================
+    for css_file in css_files:
+        if css_file.exists():
+            st.markdown(
+                f"<style>{css_file.read_text(encoding='utf-8')}</style>",
+                unsafe_allow_html=True
+            )
 
-st.markdown("""
-<style>
+load_css()
 
-.analytics-title {
-    font-size: 2.1rem;
-    font-weight: 800;
-    margin-bottom: 0;
-}
-
-.analytics-subtitle {
-    color: #8b95a7;
-    font-size: 0.95rem;
-    margin-bottom: 1.5rem;
-}
-
-.metric-card {
-    padding: 12px 0;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-
-# ==========================================
-# LOAD DATA
-# ==========================================
+# ============================================================
+# 2. LOAD DATA
+# ============================================================
 
 @st.cache_data
-def load_sentiment_data():
+def load_destinations():
+    if not DESTINATION_FILE.exists():
+        return pd.DataFrame()
 
-    data_file = next(
-        (
-            file
-            for file in DATA_CANDIDATES
-            if file.exists()
-        ),
-        None
-    )
+    df = pd.read_csv(DESTINATION_FILE)
 
-    # Cari file CSV sentimen secara otomatis
-    if data_file is None:
+    required = [
+        "title", "address", "latitude", "longitude",
+        "totalScore", "reviewsCount"
+    ]
 
-        possible_files = list(
-            (BASE_DIR / "data" / "processed").rglob("*sentiment*.csv")
-        ) + list(
-            (BASE_DIR / "data" / "processed").rglob("*labeled*.csv")
+    for col in required:
+        if col not in df.columns:
+            df[col] = None
+
+    df["title"] = df["title"].fillna("").astype(str)
+    df["address"] = df["address"].fillna("Alamat tidak tersedia")
+
+    return df
+
+
+@st.cache_data
+def load_reviews():
+    if not REVIEW_FILE.exists():
+        return pd.DataFrame()
+
+    df = pd.read_csv(REVIEW_FILE)
+
+    required = [
+        "nama_destinasi",
+        "review",
+        "rating",
+        "sentiment"
+    ]
+
+    for col in required:
+        if col not in df.columns:
+            df[col] = None
+
+    return df
+
+
+@st.cache_resource
+def load_model():
+    try:
+        if MODEL_FILE.exists():
+            return joblib.load(MODEL_FILE)
+    except Exception as e:
+        print("Model error:", e)
+
+    return None
+
+
+@st.cache_resource
+def load_vectorizer():
+    try:
+        if VECTORIZER_FILE.exists():
+            return joblib.load(VECTORIZER_FILE)
+    except Exception as e:
+        print("Vectorizer error:", e)
+
+    return None
+
+
+destinations = load_destinations()
+reviews_dataset = load_reviews()
+model = load_model()
+vectorizer = load_vectorizer()
+
+
+# ============================================================
+# 3. DATABASE REVIEW USER
+# ============================================================
+
+def init_database():
+    DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                destination_name TEXT NOT NULL,
+                nickname TEXT NOT NULL,
+                rating INTEGER NOT NULL,
+                review_text TEXT NOT NULL,
+                sentiment TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+
+
+def save_user_review(destination, nickname, rating, review, sentiment):
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute("""
+            INSERT INTO user_reviews (
+                destination_name,
+                nickname,
+                rating,
+                review_text,
+                sentiment,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            destination,
+            nickname,
+            rating,
+            review,
+            sentiment,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ))
+
+
+def get_user_reviews(destination=None):
+    with sqlite3.connect(DB_FILE) as conn:
+        if destination is None:
+            return pd.read_sql_query(
+                "SELECT * FROM user_reviews ORDER BY id DESC",
+                conn
+            )
+
+        return pd.read_sql_query(
+            """
+            SELECT * FROM user_reviews
+            WHERE destination_name = ?
+            ORDER BY id DESC
+            """,
+            conn,
+            params=(destination,)
         )
 
-        data_file = next(
-            (
-                file
-                for file in possible_files
-                if file.exists()
-            ),
-            None
-        )
 
-    if data_file is None:
-        return None, None
-
-    df = pd.read_csv(data_file)
-
-    return df, data_file
+init_database()
 
 
-# ==========================================
-# NORMALIZE SENTIMENT
-# ==========================================
+# ============================================================
+# 4. HELPER
+# ============================================================
+
+def safe_text(value, default="—"):
+    if pd.isna(value):
+        return default
+
+    value = str(value).strip()
+
+    if value.lower() in ["", "nan", "none"]:
+        return default
+
+    return value
+
+
+def safe_float(value):
+    try:
+        if pd.isna(value):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def format_number(value):
+    try:
+        return f"{int(float(value)):,}".replace(",", ".")
+    except (TypeError, ValueError):
+        return "0"
+
+
+def normalize_name(value):
+    value = str(value).lower().strip()
+    value = re.sub(r"[^a-z0-9]", "", value)
+    return value
+
 
 def normalize_sentiment(value):
-
     if pd.isna(value):
-        return None
+        return "Unknown"
 
     value = str(value).strip().lower()
 
-    mapping = {
-        "positive": "Positif",
-        "positif": "Positif",
-        "1": "Positif",
-        "1.0": "Positif",
+    if value in ["positive", "positif", "pos", "1"]:
+        return "Positive"
 
-        "neutral": "Netral",
-        "netral": "Netral",
-        "0": "Netral",
-        "0.0": "Netral",
+    if value in ["neutral", "netral", "neu", "0"]:
+        return "Neutral"
 
-        "negative": "Negatif",
-        "negatif": "Negatif",
-        "-1": "Negatif",
-        "-1.0": "Negatif"
+    if value in ["negative", "negatif", "neg", "-1"]:
+        return "Negative"
+
+    return "Unknown"
+
+
+def get_category(name):
+    name = str(name).lower()
+
+    categories = {
+        "Pantai": [
+            "pantai", "beach"
+        ],
+        "Wisata Air": [
+            "air terjun", "waterfall", "waduk",
+            "embung", "sungai", "waterpark"
+        ],
+        "Desa & Budaya": [
+            "desa wisata", "desa", "budaya",
+            "kampung", "museum"
+        ],
+        "Kuliner": [
+            "kuliner", "restoran", "restaurant",
+            "cafe", "café", "warung", "kopi"
+        ],
+        "Taman & Kebun": [
+            "taman", "kebun", "garden", "agrowisata"
+        ],
+        "Panorama": [
+            "bukit", "puncak", "view", "panorama",
+            "sunrise", "sunset"
+        ],
+        "Wisata Alam": [
+            "alam", "hutan", "goa", "gua", "gunung"
+        ]
     }
 
-    return mapping.get(value)
+    for category, keywords in categories.items():
+        if any(keyword in name for keyword in keywords):
+            return category
 
+    return "Lainnya"
 
-# ==========================================
-# LOAD DATA
-# ==========================================
 
-try:
-
-    df, data_file = load_sentiment_data()
-
-except Exception as e:
-
-    st.error(f"Gagal membaca dataset sentimen: {e}")
-    st.stop()
-
-
-if df is None:
-
-    st.warning(
-        "Dataset hasil labeling sentimen belum ditemukan."
-    )
-
-    st.info(
-        "Pastikan dataset hasil labeling tersedia di folder "
-        "`data/processed/reviews/`."
-    )
-
-    st.stop()
-
-
-# ==========================================
-# IDENTIFY COLUMNS
-# ==========================================
-
-sentiment_candidates = [
-    "sentiment",
-    "sentiment_label",
-    "label",
-    "predicted_sentiment"
-]
-
-text_candidates = [
-    "review_text",
-    "review",
-    "text",
-    "preprocessed_text"
-]
-
-destination_candidates = [
-    "nama_destinasi",
-    "destination_name",
-    "title",
-    "destinasi"
-]
-
-
-sentiment_column = next(
-    (
-        col
-        for col in sentiment_candidates
-        if col in df.columns
-    ),
-    None
-)
-
-text_column = next(
-    (
-        col
-        for col in text_candidates
-        if col in df.columns
-    ),
-    None
-)
-
-destination_column = next(
-    (
-        col
-        for col in destination_candidates
-        if col in df.columns
-    ),
-    None
-)
-
-
-if sentiment_column is None:
-
-    st.error(
-        "Kolom label sentimen tidak ditemukan pada dataset."
-    )
-
-    st.write("Kolom yang tersedia:", df.columns.tolist())
-
-    st.stop()
-
-
-# ==========================================
-# PROCESS SENTIMENT
-# ==========================================
-
-df["sentiment_display"] = df[
-    sentiment_column
-].apply(normalize_sentiment)
-
-
-df = df.dropna(
-    subset=["sentiment_display"]
-).copy()
-
-
-if df.empty:
-
-    st.warning(
-        "Tidak terdapat label sentimen yang valid."
-    )
-
-    st.stop()
-
-
-# ==========================================
-# HEADER
-# ==========================================
-
-st.markdown(
-    '<div class="analytics-title">📊 Sentiment Analytics</div>',
-    unsafe_allow_html=True
-)
-
-st.markdown(
-    '<div class="analytics-subtitle">'
-    'Analisis persepsi pengunjung berdasarkan ulasan '
-    'destinasi wisata Kulon Progo.'
-    '</div>',
-    unsafe_allow_html=True
-)
-
-
-# ==========================================
-# SUMMARY METRICS
-# ==========================================
-
-total_reviews = len(df)
-
-sentiment_counts = df[
-    "sentiment_display"
-].value_counts()
-
-
-positive_count = sentiment_counts.get(
-    "Positif", 0
-)
-
-neutral_count = sentiment_counts.get(
-    "Netral", 0
-)
-
-negative_count = sentiment_counts.get(
-    "Negatif", 0
-)
-
-
-positive_percentage = (
-    positive_count / total_reviews * 100
-    if total_reviews > 0
-    else 0
-)
-
-neutral_percentage = (
-    neutral_count / total_reviews * 100
-    if total_reviews > 0
-    else 0
-)
-
-negative_percentage = (
-    negative_count / total_reviews * 100
-    if total_reviews > 0
-    else 0
-)
-
-
-col1, col2, col3, col4 = st.columns(4)
-
-
-with col1:
-
-    st.metric(
-        "Total Reviews",
-        f"{total_reviews:,}"
-    )
-
-
-with col2:
-
-    st.metric(
-        "😊 Positif",
-        f"{positive_count:,}",
-        f"{positive_percentage:.1f}%"
-    )
-
-
-with col3:
-
-    st.metric(
-        "😐 Netral",
-        f"{neutral_count:,}",
-        f"{neutral_percentage:.1f}%"
-    )
-
-
-with col4:
-
-    st.metric(
-        "😞 Negatif",
-        f"{negative_count:,}",
-        f"{negative_percentage:.1f}%"
-    )
-
-
-st.divider()
-
-
-# ==========================================
-# SENTIMENT DISTRIBUTION
-# ==========================================
-
-st.subheader("Sentiment Distribution")
-
-col_chart, col_summary = st.columns(
-    [1.5, 1]
-)
-
-
-with col_chart:
-
-    chart_data = pd.DataFrame({
-        "Sentimen": [
-            "Positif",
-            "Netral",
-            "Negatif"
-        ],
-        "Jumlah": [
-            positive_count,
-            neutral_count,
-            negative_count
-        ]
-    })
-
-    chart_data = chart_data.set_index(
-        "Sentimen"
-    )
-
-    st.bar_chart(
-        chart_data,
-        y="Jumlah",
-        color="#4C78A8"
-    )
-
-
-with col_summary:
-
-    st.markdown("### Ringkasan Sentimen")
-
-    st.markdown(
-        f"""
-        😊 **Positif**  
-        {positive_percentage:.1f}% dari seluruh ulasan
-
-        😐 **Netral**  
-        {neutral_percentage:.1f}% dari seluruh ulasan
-
-        😞 **Negatif**  
-        {negative_percentage:.1f}% dari seluruh ulasan
-        """
-    )
-
-
-st.divider()
-
-
-# ==========================================
-# SENTIMENT BY DESTINATION
-# ==========================================
-
-st.subheader("Sentiment by Destination")
-
-
-if destination_column is not None:
-
-    destination_sentiment = (
-        df.groupby(
-            [destination_column, "sentiment_display"]
-        )
-        .size()
-        .unstack(fill_value=0)
-    )
-
-    for sentiment in [
-        "Positif",
-        "Netral",
-        "Negatif"
-    ]:
-
-        if sentiment not in destination_sentiment.columns:
-            destination_sentiment[sentiment] = 0
-
-    destination_sentiment = destination_sentiment[
-        ["Positif", "Netral", "Negatif"]
+def get_destination_row(name):
+    matched = destinations[
+        destinations["title"] == name
     ]
 
-    destination_sentiment["Total Review"] = (
-        destination_sentiment.sum(axis=1)
-    )
+    if matched.empty:
+        return None
 
-    destination_sentiment = (
-        destination_sentiment
-        .sort_values(
-            "Total Review",
-            ascending=False
-        )
-    )
-
-    col1, col2 = st.columns(2)
+    return matched.iloc[0]
 
 
-    with col1:
+# ============================================================
+# 5. REVIEW DESTINATION MATCHING
+# ============================================================
 
-        st.markdown("#### Destinasi dengan Sentimen Positif Terbanyak")
+def match_destination_reviews(destination_name):
+    """
+    Mencocokkan review dataset dengan nama destinasi.
+    Menggunakan exact normalized match terlebih dahulu,
+    kemudian similarity match sebagai fallback.
+    """
 
-        top_positive = (
-            destination_sentiment
-            .sort_values(
-                "Positif",
-                ascending=False
-            )
-            .head(10)
-        )
+    if reviews_dataset.empty:
+        return pd.DataFrame()
 
-        st.bar_chart(
-            top_positive["Positif"],
-            color="#59A14F"
-        )
-
-
-    with col2:
-
-        st.markdown("#### Destinasi dengan Sentimen Negatif Terbanyak")
-
-        top_negative = (
-            destination_sentiment
-            .sort_values(
-                "Negatif",
-                ascending=False
-            )
-            .head(10)
-        )
-
-        st.bar_chart(
-            top_negative["Negatif"],
-            color="#E15759"
-        )
-
-
-    # Tabel detail destinasi
-    with st.expander("📋 Lihat detail sentimen setiap destinasi"):
-
-        display_destination = (
-            destination_sentiment
-            .reset_index()
-            .rename(
-                columns={
-                    destination_column: "Nama Destinasi"
-                }
-            )
-        )
-
-        st.dataframe(
-            display_destination,
-            use_container_width=True,
-            hide_index=True
-        )
-
-else:
-
-    st.info(
-        "Data nama destinasi tidak tersedia, "
-        "sehingga analisis per destinasi belum dapat ditampilkan."
-    )
-
-
-st.divider()
-
-
-# ==========================================
-# WORD CLOUD
-# ==========================================
-
-st.subheader("Word Cloud")
-
-if text_column is not None:
-
-    text_data = (
-        df[text_column]
+    review_names = (
+        reviews_dataset["nama_destinasi"]
         .dropna()
         .astype(str)
+        .unique()
+        .tolist()
     )
 
-    combined_text = " ".join(
-        text_data.tolist()
+    target = normalize_name(destination_name)
+
+    # Exact normalized match
+    matched_names = [
+        name for name in review_names
+        if normalize_name(name) == target
+    ]
+
+    # Similarity fallback
+    if not matched_names:
+
+        best_name = None
+        best_score = 0
+
+        for name in review_names:
+            score = SequenceMatcher(
+                None,
+                target,
+                normalize_name(name)
+            ).ratio()
+
+            if score > best_score:
+                best_score = score
+                best_name = name
+
+        # Hanya menerima nama yang sangat mirip
+        if best_score >= 0.88 and best_name:
+            matched_names = [best_name]
+
+    if not matched_names:
+        return pd.DataFrame()
+
+    matched = reviews_dataset[
+        reviews_dataset["nama_destinasi"]
+        .astype(str)
+        .isin(matched_names)
+    ].copy()
+
+    matched = matched.rename(
+        columns={
+            "nama_destinasi": "destination_name"
+        }
     )
+
+    matched["nickname"] = "Pengunjung"
+    matched["created_at"] = ""
+    matched["source"] = "Crawling"
+
+    matched = matched.rename(
+        columns={
+            "review": "review_text"
+        }
+    )
+
+    return matched[
+        [
+            "destination_name",
+            "review_text",
+            "rating",
+            "sentiment",
+            "nickname",
+            "created_at",
+            "source"
+        ]
+    ]
+
+
+# ============================================================
+# 6. COMBINE REVIEWS
+# ============================================================
+
+def get_all_reviews(destination_name):
+
+    crawling_reviews = match_destination_reviews(
+        destination_name
+    )
+
+    user_reviews = get_user_reviews(
+        destination_name
+    )
+
+    user_reviews = user_reviews.rename(
+        columns={
+            "destination_name": "destination_name",
+            "review_text": "review_text"
+        }
+    )
+
+    if not user_reviews.empty:
+        user_reviews["source"] = "Pengguna"
+    else:
+        user_reviews["source"] = pd.Series(dtype=str)
+
+    columns = [
+        "destination_name",
+        "review_text",
+        "rating",
+        "sentiment",
+        "nickname",
+        "created_at",
+        "source"
+    ]
+
+    if crawling_reviews.empty:
+        crawling_reviews = pd.DataFrame(columns=columns)
+
+    if user_reviews.empty:
+        user_reviews = pd.DataFrame(columns=columns)
+
+    all_reviews = pd.concat(
+        [crawling_reviews, user_reviews],
+        ignore_index=True
+    )
+
+    if not all_reviews.empty:
+
+        all_reviews["sentiment"] = (
+            all_reviews["sentiment"]
+            .apply(normalize_sentiment)
+        )
+
+        all_reviews["review_text"] = (
+            all_reviews["review_text"]
+            .fillna("")
+            .astype(str)
+        )
+
+        # Buang review kosong
+        all_reviews = all_reviews[
+            all_reviews["review_text"].str.strip() != ""
+        ]
+
+    return all_reviews
+
+
+# ============================================================
+# 7. SENTIMENT
+# ============================================================
+
+def get_sentiment_counts(all_reviews):
+
+    counts = {
+        "Positive": 0,
+        "Neutral": 0,
+        "Negative": 0
+    }
+
+    if all_reviews.empty:
+        return counts
+
+    for sentiment in all_reviews["sentiment"]:
+
+        sentiment = normalize_sentiment(sentiment)
+
+        if sentiment in counts:
+            counts[sentiment] += 1
+
+    return counts
+
+
+def generate_insight(counts):
+
+    total = sum(counts.values())
+
+    if total == 0:
+        return "Belum tersedia ulasan yang cukup untuk menghasilkan insight."
+
+    positive = counts["Positive"]
+    neutral = counts["Neutral"]
+    negative = counts["Negative"]
+
+    positive_pct = positive / total * 100
+    negative_pct = negative / total * 100
+
+    if positive > negative:
+        return (
+            f"Pengalaman pengunjung cenderung positif. "
+            f"{positive_pct:.1f}% ulasan menunjukkan pengalaman positif."
+        )
+
+    elif negative > positive:
+        return (
+            f"Terdapat beberapa hal yang perlu diperhatikan. "
+            f"{negative_pct:.1f}% ulasan menunjukkan sentimen negatif."
+        )
+
+    else:
+        return (
+            "Sentimen pengunjung relatif berimbang. "
+            "Terdapat pengalaman positif dan aspek yang masih perlu diperhatikan."
+        )
+
+
+# ============================================================
+# 8. PREDICT USER REVIEW
+# ============================================================
+
+def predict_sentiment(text):
+
+    if model is None or vectorizer is None:
+        return None
 
     try:
 
-        from wordcloud import WordCloud
+        transformed = vectorizer.transform([text])
+        prediction = model.predict(transformed)[0]
 
-        if combined_text.strip():
+        # Label model dataset: -1 Negative, 0 Neutral, 1 Positive
+        return normalize_sentiment(prediction)
 
-            wordcloud = WordCloud(
-                width=1000,
-                height=450,
-                background_color="white",
-                colormap="Blues",
-                max_words=100,
-                collocations=False
-            ).generate(combined_text)
+    except Exception as e:
+        print("Sentiment prediction error:", e)
+        return None
 
-            fig, ax = plt.subplots(
-                figsize=(12, 5)
+
+# ============================================================
+# 9. REVIEW DISPLAY
+# ============================================================
+
+def show_review(review):
+
+    nickname = safe_text(
+        review.get("nickname"),
+        "Pengunjung"
+    )
+
+    rating = safe_text(
+        review.get("rating")
+    )
+
+    sentiment = normalize_sentiment(
+        review.get("sentiment")
+    )
+
+    text_review = safe_text(
+        review.get("review_text"),
+        ""
+    )
+
+    date = safe_text(
+        review.get("created_at"),
+        ""
+    )
+
+    icon = {
+        "Positive": "🟢",
+        "Neutral": "🟡",
+        "Negative": "🔴",
+        "Unknown": "⚪"
+    }
+
+    with st.container(border=True):
+
+        st.markdown(f"**{nickname}**")
+
+        st.caption(
+            f"⭐ {rating}  ·  "
+            f"{icon.get(sentiment, '⚪')} {sentiment}"
+        )
+
+        if date != "—" and date != "":
+            st.caption(date)
+
+        st.write(text_review)
+
+
+# ============================================================
+# 10. DESTINATION CARD
+# ============================================================
+
+def show_destination_card(row, key):
+
+    name = safe_text(row["title"])
+
+    with st.container(border=True):
+
+        st.caption(get_category(name))
+
+        st.markdown(f"**{name}**")
+
+        st.caption(
+            f"📍 {safe_text(row.get('address'))}"
+        )
+
+        score = safe_float(row.get("totalScore"))
+
+        if score is not None:
+            st.write(f"⭐ {score:.1f}/5")
+
+        st.write(
+            f"💬 {format_number(row.get('reviewsCount'))} review Google Maps"
+        )
+
+        if st.button(
+            "Lihat Detail →",
+            key=key,
+            use_container_width=True
+        ):
+
+            st.session_state.selected_destination = name
+            st.rerun()
+
+
+# ============================================================
+# 11. PAGE HEADER
+# ============================================================
+
+st.markdown("""
+<div class="explore-hero">
+    <div class="hero-eyebrow">DISCOVER · EXPLORE · EXPERIENCE</div>
+    <h1>Explore Destinations 🌿</h1>
+    <p>Temukan tempat baru, rencanakan perjalanan,
+    dan jelajahi keindahan Kulon Progo.</p>
+</div>
+""", unsafe_allow_html=True)
+
+# ============================================================
+# 12. DESTINATION DETAIL
+# ============================================================
+
+def show_detail(destination_name):
+
+    row = get_destination_row(destination_name)
+
+    if row is None:
+        st.error("Destinasi tidak ditemukan.")
+        return
+
+    if st.button("← Kembali ke Explore"):
+        st.session_state.selected_destination = None
+        st.rerun()
+
+    st.divider()
+
+    # --------------------------------------------------------
+    # INFORMATION
+    # --------------------------------------------------------
+
+    st.subheader(destination_name)
+
+    st.caption(
+        f"📍 {safe_text(row['address'])}"
+    )
+
+    destination_rating = safe_float(row["totalScore"])
+
+    all_reviews = get_all_reviews(destination_name)
+
+    # Jumlah review aplikasi: dataset + user review
+    total_reviews = len(all_reviews)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.metric(
+            "⭐ Rating Destinasi",
+            f"{destination_rating:.1f}/5"
+            if destination_rating is not None
+            else "—"
+        )
+
+    with col2:
+        st.metric(
+            "📝 Total Ulasan",
+            total_reviews
+        )
+
+    st.divider()
+
+    # --------------------------------------------------------
+    # INTERACTIVE MAP
+    # --------------------------------------------------------
+
+    st.subheader("📍 Lokasi Destinasi")
+
+    latitude = safe_float(row["latitude"])
+    longitude = safe_float(row["longitude"])
+
+    if latitude is not None and longitude is not None:
+
+        destination_map = folium.Map(
+            location=[latitude, longitude],
+            zoom_start=15,
+            tiles="OpenStreetMap"
+        )
+
+        folium.Marker(
+            location=[latitude, longitude],
+            tooltip=destination_name,
+            popup=folium.Popup(
+                f"<b>{destination_name}</b><br>{safe_text(row['address'])}",
+                max_width=300
+            ),
+            icon=folium.Icon(
+                color="green",
+                icon="info-sign"
+            )
+        ).add_to(destination_map)
+
+        st_folium(
+            destination_map,
+            width=None,
+            height=420,
+            returned_objects=[]
+        )
+
+        st.link_button(
+            "Buka di Google Maps ↗",
+            f"https://www.google.com/maps?q={latitude},{longitude}"
+        )
+
+    else:
+
+        st.warning("Koordinat destinasi belum tersedia.")
+
+        st.link_button(
+            "Cari di Google Maps ↗",
+            "https://www.google.com/maps/search/?api=1&query="
+            + destination_name.replace(" ", "+")
+        )
+
+    st.divider()
+
+    # --------------------------------------------------------
+    # SENTIMENT
+    # --------------------------------------------------------
+
+    counts = get_sentiment_counts(all_reviews)
+
+    total_sentiment = sum(counts.values())
+
+    st.subheader("💬 Sentimen Pengunjung")
+
+    col_positive, col_neutral, col_negative = st.columns(3)
+
+    sentiment_columns = [
+        (col_positive, "Positive", "🟢"),
+        (col_neutral, "Neutral", "🟡"),
+        (col_negative, "Negative", "🔴")
+    ]
+
+    for column, label, icon in sentiment_columns:
+
+        count = counts[label]
+
+        percentage = (
+            count / total_sentiment * 100
+            if total_sentiment > 0
+            else 0
+        )
+
+        with column:
+            st.metric(
+                f"{icon} {label}",
+                count,
+                f"{percentage:.1f}%"
             )
 
-            ax.imshow(
-                wordcloud,
-                interpolation="bilinear"
+    # --------------------------------------------------------
+    # CHART
+    # --------------------------------------------------------
+
+    if total_sentiment > 0:
+
+        chart_data = pd.DataFrame({
+            "Jumlah": [
+                counts["Positive"],
+                counts["Neutral"],
+                counts["Negative"]
+            ]
+        }, index=[
+            "Positive",
+            "Neutral",
+            "Negative"
+        ])
+
+        st.bar_chart(chart_data)
+
+    else:
+
+        st.info(
+            "Belum ada review yang memiliki label sentimen."
+        )
+
+    # --------------------------------------------------------
+    # INSIGHT
+    # --------------------------------------------------------
+
+    st.subheader("✨ Insight Pengunjung")
+
+    with st.container(border=True):
+        st.write(generate_insight(counts))
+
+    st.divider()
+
+    # --------------------------------------------------------
+    # REVIEW TABS
+    # --------------------------------------------------------
+
+    tab_positive, tab_negative, tab_all = st.tabs([
+        "💚 Hal yang Disukai",
+        "⚠️ Hal yang Perlu Diperhatikan",
+        "📝 Semua Ulasan"
+    ])
+
+    positive_reviews = all_reviews[
+        all_reviews["sentiment"] == "Positive"
+    ]
+
+    negative_reviews = all_reviews[
+        all_reviews["sentiment"] == "Negative"
+    ]
+
+    # POSITIVE
+
+    with tab_positive:
+
+        st.subheader("Pengalaman Positif Pengunjung")
+
+        if positive_reviews.empty:
+
+            st.info("Belum terdapat ulasan positif.")
+
+        else:
+
+            for _, review in positive_reviews.iterrows():
+                show_review(review)
+
+    # NEGATIVE
+
+    with tab_negative:
+
+        st.subheader("Masukan Pengunjung")
+
+        if negative_reviews.empty:
+
+            st.success("Belum terdapat ulasan negatif.")
+
+        else:
+
+            for _, review in negative_reviews.iterrows():
+                show_review(review)
+
+    # ALL
+
+    with tab_all:
+
+        st.subheader(
+            f"Semua Ulasan ({len(all_reviews)})"
+        )
+
+        if all_reviews.empty:
+
+            st.info("Belum terdapat ulasan.")
+
+        else:
+
+            for _, review in all_reviews.iterrows():
+                show_review(review)
+
+    st.divider()
+
+    # --------------------------------------------------------
+    # ADD USER REVIEW
+    # --------------------------------------------------------
+
+    st.subheader("✍️ Bagikan Pengalamanmu")
+
+    st.write(
+        "Ceritakan pengalaman kunjunganmu "
+        "untuk membantu pengunjung lainnya."
+    )
+
+    with st.form(
+        key=f"review_form_{destination_name}"
+    ):
+
+        nickname = st.text_input(
+            "Nama / Nickname",
+            placeholder="Masukkan nama atau nickname"
+        )
+
+        rating_input = st.slider(
+            "Rating pengalaman",
+            min_value=1,
+            max_value=5,
+            value=5
+        )
+
+        review_text = st.text_area(
+            "Ulasan",
+            placeholder="Ceritakan pengalamanmu...",
+            height=150
+        )
+
+        submit_review = st.form_submit_button(
+            "Kirim Ulasan",
+            use_container_width=True
+        )
+
+    if submit_review:
+
+        nickname = nickname.strip()
+        review_text = review_text.strip()
+
+        if not nickname:
+
+            st.warning("Nama atau nickname harus diisi.")
+
+        elif len(review_text) < 10:
+
+            st.warning(
+                "Ulasan minimal terdiri dari 10 karakter."
             )
 
-            ax.axis("off")
+        else:
 
-            st.pyplot(
-                fig,
-                use_container_width=True
+            sentiment = predict_sentiment(review_text)
+
+            if sentiment is None:
+
+                st.error(
+                    "Prediksi sentimen gagal. "
+                    "Pastikan model dan vectorizer tersedia."
+                )
+
+            else:
+
+                save_user_review(
+                    destination=destination_name,
+                    nickname=nickname,
+                    rating=rating_input,
+                    review=review_text,
+                    sentiment=sentiment
+                )
+
+                st.success(
+                    f"Ulasan berhasil ditambahkan! "
+                    f"Sentimen: {sentiment}"
+                )
+
+                st.rerun()
+
+
+# ============================================================
+# 13. MAIN EXPLORE
+# ============================================================
+
+if destinations.empty:
+
+    st.error(
+        "Dataset destinasi tidak ditemukan. "
+        "Periksa file destinasi_clean.csv."
+    )
+
+else:
+
+    if "selected_destination" not in st.session_state:
+        st.session_state.selected_destination = None
+
+    if "surprise_destination" not in st.session_state:
+        st.session_state.surprise_destination = None
+
+    # DETAIL PAGE
+
+    if st.session_state.selected_destination:
+
+        show_detail(
+            st.session_state.selected_destination
+        )
+
+    # EXPLORE PAGE
+
+    else:
+
+        st.subheader("🔎 Smart Explore")
+
+        st.write(
+            "Cari destinasi berdasarkan nama "
+            "atau pilih kategori wisata."
+        )
+
+        col_search, col_category = st.columns([2, 1])
+
+        with col_search:
+
+            keyword = st.text_input(
+                "Cari Destinasi",
+                placeholder="Contoh: Pantai Glagah",
+                key="explore_keyword"
             )
 
-            plt.close(fig)
+        destinations["kategori"] = (
+            destinations["title"].apply(get_category)
+        )
+
+        categories = [
+            "Semua Kategori"
+        ] + sorted(
+            destinations["kategori"].dropna().unique().tolist()
+        )
+
+        with col_category:
+
+            selected_category = st.selectbox(
+                "Kategori",
+                categories,
+                key="explore_category"
+            )
+
+        # FILTER
+
+        filtered = destinations.copy()
+
+        if keyword.strip():
+
+            filtered = filtered[
+                filtered["title"].str.contains(
+                    keyword.strip(),
+                    case=False,
+                    na=False,
+                    regex=False
+                )
+            ]
+
+        if selected_category != "Semua Kategori":
+
+            filtered = filtered[
+                filtered["kategori"] == selected_category
+            ]
+
+        search_active = bool(keyword.strip())
+
+        category_active = (
+            selected_category != "Semua Kategori"
+        )
+
+        st.divider()
+
+        # SURPRISE ME
+
+        st.subheader("🎲 Surprise Me")
+
+        st.write(
+            "Temukan destinasi pilihan secara acak."
+        )
+
+        if st.button(
+            "🎲 Pilihkan Destinasi",
+            use_container_width=True
+        ):
+
+            st.session_state.surprise_destination = random.choice(
+                destinations["title"].tolist()
+            )
+
+        surprise = st.session_state.surprise_destination
+
+        if surprise:
+
+            surprise_row = get_destination_row(surprise)
+
+            if surprise_row is not None:
+
+                show_destination_card(
+                    surprise_row,
+                    key="surprise_destination_card"
+                )
+
+                if st.button(
+                    "🔄 Reroll",
+                    key="surprise_reroll",
+                    use_container_width=True
+                ):
+
+                    available = destinations[
+                        destinations["title"] != surprise
+                    ]["title"].tolist()
+
+                    if available:
+                        st.session_state.surprise_destination = random.choice(
+                            available
+                        )
+
+                    st.rerun()
+
+        # SEARCH RESULTS
+
+        if search_active or category_active:
+
+            st.divider()
+
+            st.subheader("🌿 Hasil Explore")
+
+            st.caption(
+                f"Menampilkan {len(filtered)} destinasi"
+            )
+
+            if filtered.empty:
+
+                st.info(
+                    "Destinasi tidak ditemukan. "
+                    "Coba kata kunci lainnya."
+                )
+
+            else:
+
+                for start in range(0, len(filtered), 3):
+
+                    chunk = filtered.iloc[start:start + 3]
+
+                    columns = st.columns(3)
+
+                    for column, (_, row) in zip(
+                        columns,
+                        chunk.iterrows()
+                    ):
+
+                        with column:
+
+                            show_destination_card(
+                                row,
+                                key=f"result_{start}_{row['title']}"
+                            )
 
         else:
 
             st.info(
-                "Tidak ada teks ulasan untuk Word Cloud."
+                "🔍 Cari destinasi atau pilih kategori "
+                "untuk mulai menjelajah."
             )
-
-    except ImportError:
-
-        st.info(
-            "Library WordCloud belum terpasang. "
-            "Install menggunakan `pip install wordcloud`."
-        )
-
-else:
-
-    st.info(
-        "Kolom teks ulasan tidak ditemukan."
-    )
-
-
-st.divider()
-
-
-# ==========================================
-# AUTOMATIC INSIGHT
-# ==========================================
-
-st.subheader("💡 Sentiment Insights")
-
-
-if positive_percentage >= 60:
-
-    positive_insight = (
-        "Mayoritas ulasan menunjukkan pengalaman positif. "
-        "Hal ini mengindikasikan pengunjung cenderung "
-        "memberikan respons yang baik terhadap destinasi."
-    )
-
-elif positive_percentage >= 40:
-
-    positive_insight = (
-        "Sentimen positif menjadi salah satu sentimen dominan, "
-        "tetapi masih terdapat variasi pengalaman pengunjung."
-    )
-
-else:
-
-    positive_insight = (
-        "Proporsi sentimen positif relatif rendah. "
-        "Perlu ditinjau lebih lanjut faktor yang memengaruhi "
-        "pengalaman pengunjung."
-    )
-
-
-if negative_percentage >= 20:
-
-    negative_insight = (
-        "Persentase sentimen negatif cukup tinggi. "
-        "Ulasan negatif dapat ditelusuri lebih lanjut "
-        "untuk mengetahui aspek yang perlu diperbaiki."
-    )
-
-else:
-
-    negative_insight = (
-        "Sentimen negatif relatif rendah dibandingkan total ulasan."
-    )
-
-
-if neutral_percentage >= 30:
-
-    neutral_insight = (
-        "Ulasan netral memiliki proporsi yang cukup besar, "
-        "yang dapat menunjukkan pengalaman informatif atau "
-        "ulasan dengan ekspresi sentimen terbatas."
-    )
-
-else:
-
-    neutral_insight = (
-        "Ulasan netral memiliki proporsi yang relatif lebih kecil."
-    )
-
-
-st.markdown(
-    f"""
-    - {positive_insight}
-    - {neutral_insight}
-    - {negative_insight}
-    """
-)
-
-
-# ==========================================
-# DATA INFORMATION
-# ==========================================
-
-with st.expander("ℹ️ Informasi Dataset"):
-
-    st.write(
-        f"**File dataset:** `{data_file.name}`"
-    )
-
-    st.write(
-        f"**Total data dianalisis:** {len(df):,} ulasan"
-    )
-
-    st.write(
-        f"**Kolom sentimen:** `{sentiment_column}`"
-    )
-
-    if text_column:
-
-        st.write(
-            f"**Kolom teks:** `{text_column}`"
-        )
-
-    if destination_column:
-
-        st.write(
-            f"**Kolom destinasi:** `{destination_column}`"
-        )
-
-
-# ==========================================
-# FOOTER
-# ==========================================
-
-st.markdown("---")
-
-st.caption(
-    "WisataKP | Sentiment Analytics • Kulon Progo, Yogyakarta"
-)

@@ -1,278 +1,298 @@
-/* =========================================================
-   WISATAKP - MAIN DASHBOARD
-   ========================================================= */
 
-/* ---------- PAGE TITLE ---------- */
+/* ==========================================================
+   WISATAKP — GLOBAL DESIGN SYSTEM
+   Minimalist Nature & Tourism Intelligence
+   ========================================================== */
 
-.dashboard-title {
-    font-size: 30px;
-    font-weight: 700;
-    color: #243447;
-    margin-bottom: 24px;
+/* 01. IMPORT FONT */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+
+
+/* 02. COLOR SYSTEM */
+:root {
+    --forest: #294D3A;
+    --forest-dark: #1E3C2C;
+    --forest-light: #50765E;
+
+    --sage: #DDE8DB;
+    --sage-light: #EDF2EA;
+    --sage-muted: #C8D7C7;
+
+    --cream: #F7F6F1;
+    --white: #FFFFFF;
+
+    --text-primary: #304438;
+    --text-secondary: #78857B;
+    --text-light: #9AA49B;
+
+    --border: #E4E9E1;
+
+    --positive: #75977B;
+    --neutral: #D1A65E;
+    --negative: #C57B75;
+
+    --radius-sm: 10px;
+    --radius-md: 15px;
+    --radius-lg: 20px;
+    --radius-xl: 25px;
+
+    --shadow-soft: 0 3px 12px rgba(39, 75, 54, 0.04);
+    --shadow-hover: 0 8px 24px rgba(39, 75, 54, 0.07);
 }
 
 
-/* ---------- SECTION ---------- */
+/* 03. MAIN APPLICATION
+   Sidebar intentionally excluded.
+   ========================================================== */
 
-.dashboard-section {
-    background: #FFFFFF;
-    border: 1px solid #E8EDF2;
-    border-radius: 18px;
-    padding: 18px 22px;
-    margin: 18px 0 14px 0;
+.stApp {
+    font-family: 'DM Sans', sans-serif !important;
+    color: var(--text-primary);
 }
 
-.section-label {
-    font-size: 14px;
-    font-weight: 600;
-    color: #84909D;
-    letter-spacing: 0.5px;
-    margin-bottom: 12px;
+/* Main content background only */
+[data-testid="stMain"] {
+    background-color: var(--cream) !important;
 }
 
-.section-subtitle {
-    font-size: 21px;
-    font-weight: 700;
-    color: #273444;
-    margin-bottom: 6px;
-}
-
-.section-description {
-    font-size: 14px;
-    color: #7B8794;
-    line-height: 1.6;
-    margin-bottom: 4px;
+/* Main page width */
+[data-testid="stMainBlockContainer"] {
+    max-width: 1440px !important;
+    padding-top: 2rem !important;
+    padding-bottom: 3rem !important;
+    padding-left: 2.5rem !important;
+    padding-right: 2.5rem !important;
 }
 
 
-/* ---------- KPI SECTION ---------- */
+/* 04. TYPOGRAPHY
+   ========================================================== */
 
-.kpi-section {
-    background: #EAF2FC;
-    border-radius: 18px;
-    padding: 16px 20px;
-    margin-bottom: 12px;
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Manrope', sans-serif !important;
+    color: var(--forest) !important;
+    letter-spacing: -0.035em !important;
 }
 
-.kpi-section-label {
-    color: #5A82B5;
+h1 {
+    font-size: 2.35rem !important;
+    font-weight: 800 !important;
+    line-height: 1.15 !important;
 }
 
-.kpi-card {
-    border-radius: 16px;
-    padding: 20px 24px;
-    min-height: 135px;
-
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-
-    transition: transform 0.2s ease;
+h2 {
+    font-size: 1.65rem !important;
+    font-weight: 750 !important;
 }
 
-.kpi-card:hover {
-    transform: translateY(-2px);
+h3 {
+    font-size: 1.18rem !important;
+    font-weight: 700 !important;
 }
 
-.kpi-blue {
-    background: #DCEAF8;
+p, label, span {
+    font-family: 'DM Sans', sans-serif;
 }
 
-.kpi-green {
-    background: #DFEFE5;
+p {
+    line-height: 1.7;
 }
 
-.kpi-label {
-    font-size: 17px;
-    font-weight: 600;
-    color: #344252;
-    margin-bottom: 12px;
-}
-
-.kpi-value {
-    font-size: 42px;
-    font-weight: 750;
-    line-height: 1.1;
-}
-
-.kpi-blue .kpi-value {
-    color: #456F9C;
-}
-
-.kpi-green .kpi-value {
-    color: #43805C;
+small {
+    color: var(--text-secondary);
 }
 
 
-/* ---------- REVIEW LEGEND ---------- */
+/* 05. BUTTONS
+   ========================================================== */
 
-.review-legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-top: 14px;
-    color: #6F7B86;
-    font-size: 13px;
+.stButton > button,
+.stDownloadButton > button {
+    border-radius: 11px !important;
+    min-height: 42px !important;
+    padding: 0.55rem 1.1rem !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 0.88rem !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease !important;
 }
 
-.legend-item {
-    display: flex;
-    align-items: center;
-    gap: 7px;
+/* Primary */
+.stButton > button[kind="primary"] {
+    background-color: var(--forest) !important;
+    color: white !important;
+    border: 1px solid var(--forest) !important;
 }
 
-.legend-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    flex-shrink: 0;
+.stButton > button[kind="primary"]:hover {
+    background-color: var(--forest-dark) !important;
+    border-color: var(--forest-dark) !important;
+    transform: translateY(-1px);
 }
 
-.review-high {
-    background: #7198CC;
+/* Secondary */
+.stButton > button[kind="secondary"] {
+    background-color: var(--white) !important;
+    color: var(--forest) !important;
+    border: 1px solid var(--border) !important;
 }
 
-.review-medium {
-    background: #75AB88;
-}
-
-.review-low {
-    background: #E9B566;
-}
-
-
-/* ---------- EXPANDER ---------- */
-
-div[data-testid="stExpander"] {
-    border: 1px solid #E6EBF0;
-    border-radius: 12px;
-    background: #FFFFFF;
-    overflow: hidden;
-}
-
-div[data-testid="stExpander"] summary {
-    font-size: 14px;
-    font-weight: 600;
-    color: #374454;
-}
-
-div[data-testid="stExpander"] summary:hover {
-    color: #5B86B5;
+.stButton > button[kind="secondary"]:hover {
+    background-color: var(--sage-light) !important;
+    border-color: var(--sage-muted) !important;
 }
 
 
-/* ---------- SENTIMENT ---------- */
+/* 06. TEXT INPUT
+   ========================================================== */
 
-.sentiment-card {
-    border-radius: 16px;
-    padding: 20px;
-    min-height: 125px;
-
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-
-    transition: transform 0.2s ease;
+.stTextInput input,
+.stTextArea textarea,
+.stNumberInput input {
+    background-color: var(--white) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 11px !important;
+    font-family: 'DM Sans', sans-serif !important;
 }
 
-.sentiment-card:hover {
-    transform: translateY(-2px);
-}
-
-.sentiment-title {
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 16px;
-}
-
-.sentiment-value {
-    font-size: 36px;
-    font-weight: 750;
-    line-height: 1;
-}
-
-.sentiment-positive {
-    background: #E2F1E6;
-    color: #43875C;
-}
-
-.sentiment-neutral {
-    background: #FFF0DB;
-    color: #B37B30;
-}
-
-.sentiment-negative {
-    background: #F8E4E4;
-    color: #C35454;
+.stTextInput input:focus,
+.stTextArea textarea:focus,
+.stNumberInput input:focus {
+    border-color: var(--forest-light) !important;
+    box-shadow: 0 0 0 1px var(--forest-light) !important;
 }
 
 
-/* ---------- CHART ---------- */
+/* 07. SELECTBOX
+   ========================================================== */
 
-div[data-testid="stVegaLiteChart"] {
+[data-baseweb="select"] {
+    border-radius: 11px !important;
+}
+
+[data-baseweb="select"] > div {
+    background-color: var(--white);
+    border-color: var(--border);
+}
+
+
+/* 08. METRIC
+   ========================================================== */
+
+[data-testid="stMetric"] {
+    background-color: var(--white) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-md) !important;
+    padding: 1rem 1.1rem !important;
+    box-shadow: var(--shadow-soft);
+}
+
+[data-testid="stMetricLabel"] {
+    color: var(--text-secondary) !important;
+    font-size: 0.8rem !important;
+}
+
+[data-testid="stMetricValue"] {
+    color: var(--forest) !important;
+    font-family: 'Manrope', sans-serif !important;
+    font-size: 1.75rem !important;
+    font-weight: 800 !important;
+}
+
+
+/* 09. CHART
+   ========================================================== */
+
+[data-testid="stPlotlyChart"],
+[data-testid="stVegaLiteChart"],
+[data-testid="stChart"] {
+    border-radius: var(--radius-md);
+}
+
+
+/* 10. DATAFRAME
+   ========================================================== */
+
+[data-testid="stDataFrame"] {
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-md) !important;
+    overflow: hidden !important;
+}
+
+
+/* 11. ALERT
+   ========================================================== */
+
+[data-testid="stAlert"] {
+    border-radius: 12px !important;
+}
+
+
+/* 12. EXPANDER
+   ========================================================== */
+
+[data-testid="stExpander"] {
+    border: 1px solid var(--border) !important;
+    border-radius: 13px !important;
+    background-color: var(--white) !important;
+}
+
+
+/* 13. DIVIDER
+   ========================================================== */
+
+hr {
+    border: none !important;
+    border-top: 1px solid var(--border) !important;
+    margin: 1.5rem 0 !important;
+}
+
+
+/* 14. SCROLLBAR
+   ========================================================== */
+
+::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+}
+
+::-webkit-scrollbar-track {
     background: transparent;
-    border-radius: 14px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #C8D5C8;
+    border-radius: 20px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #AABDAA;
 }
 
 
-/* ---------- COLUMN SPACING ---------- */
+/* 15. RESPONSIVE
+   ========================================================== */
 
-div[data-testid="stHorizontalBlock"] {
-    gap: 12px;
+@media (max-width: 900px) {
+    [data-testid="stMainBlockContainer"] {
+        padding-left: 1.25rem !important;
+        padding-right: 1.25rem !important;
+    }
+
+    h1 {
+        font-size: 1.9rem !important;
+    }
 }
 
-
-/* ---------- FOOTER ---------- */
-
-.dashboard-footer {
-    text-align: center;
-    padding: 35px 10px 15px;
-    color: #8B98A5;
-    font-size: 13px;
-}
-
-
-/* =========================================================
-   RESPONSIVE
-   ========================================================= */
-
-@media screen and (max-width: 768px) {
-
-    .dashboard-title {
-        font-size: 24px;
+@media (max-width: 600px) {
+    [data-testid="stMainBlockContainer"] {
+        padding-top: 1.2rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
     }
 
-    .section-subtitle {
-        font-size: 18px;
-    }
-
-    .section-description {
-        font-size: 13px;
-    }
-
-    .kpi-card {
-        padding: 16px;
-        min-height: 110px;
-    }
-
-    .kpi-value {
-        font-size: 32px;
-    }
-
-    .sentiment-card {
-        padding: 14px;
-        min-height: 100px;
-    }
-
-    .sentiment-value {
-        font-size: 28px;
-    }
-
-    .dashboard-section {
-        padding: 14px;
-    }
-
-    .kpi-section {
-        padding: 14px;
+    h1 {
+        font-size: 1.7rem !important;
     }
 }
