@@ -1,849 +1,1275 @@
-
 # ============================================================
-# WISATAKP - WISABOT
-# Rule-Based Tourism Chatbot
+# WISATAKP - WISBOT (AI TRAVEL ASSISTANT)
+# Styling ada di: styles/main.css, sidebar.css, wisbot.css
 # ============================================================
 
-import streamlit as st
-import pandas as pd
-import random
-import re
-
+import base64
+import math
+import sys
+from html import escape
 from pathlib import Path
-from difflib import SequenceMatcher
+from urllib.parse import quote
+
+import pandas as pd
+import streamlit as st
 
 
 # ============================================================
-# 1. PAGE CONFIG
-# ============================================================
-
-def load_css():
-    BASE_DIR = Path(__file__).resolve().parent
-
-    css_files = [
-        BASE_DIR / "assets" / "css" / "style.css",
-        BASE_DIR / "assets" / "css" / "components.css",
-    ]
-
-    for css_file in css_files:
-        if css_file.exists():
-            st.markdown(
-                f"<style>{css_file.read_text(encoding='utf-8')}</style>",
-                unsafe_allow_html=True
-            )
-
-load_css()
-# ============================================================
-# 2. PATH DATA
+# PATH & IMPORT
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = BASE_DIR
+sys.path.insert(0, str(BASE_DIR))
 
-DESTINATION_FILE = (
-    BASE_DIR
-    / "data"
-    / "processed"
-    / "destinasi"
-    / "destinasi_clean.csv"
+# Simpan gambar background di path ini (disarankan dikompres)
+BACKGROUND_PATH = ROOT_DIR / "assets" / "images" / "kp.png"
+
+from utils.wisbot_rules import (
+    DESTINATIONS,
+    handle_wisbot,
+    recommend_destinations,
+    extract_category_preference,
+    detect_intent,
+    find_destination,
+    get_destination,
+    popular_destinations,
+    positive_review_destinations,
+    format_number,
+    safe_float,
 )
 
 
 # ============================================================
-# 3. LOAD DATA
+# PAGE CONFIG
 # ============================================================
 
-@st.cache_data
-def load_destinations():
+st.set_page_config(
+    page_title="WisBot | WisataKP",
+    page_icon="🌿",
+    layout="wide"
+)
 
-    if not DESTINATION_FILE.exists():
-        return pd.DataFrame()
 
-    df = pd.read_csv(DESTINATION_FILE)
+# ============================================================
+# LOAD CSS & BACKGROUND
+# ============================================================
 
-    required_columns = [
-        "title",
-        "categoryName",
-        "address",
-        "totalScore",
-        "reviewsCount",
-        "latitude",
-        "longitude"
+def load_css():
+
+    css_files = [
+        ROOT_DIR / "styles" / "main.css",
+        ROOT_DIR / "styles" / "sidebar.css",
+        ROOT_DIR / "styles" / "wisbot.css",
     ]
 
-    for column in required_columns:
-        if column not in df.columns:
-            df[column] = None
+    for css_file in css_files:
 
-    df["title"] = df["title"].fillna("").astype(str)
-    df["categoryName"] = df["categoryName"].fillna("").astype(str)
-    df["address"] = df["address"].fillna("").astype(str)
+        if css_file.exists():
 
-    df["totalScore"] = pd.to_numeric(
-        df["totalScore"],
-        errors="coerce"
+            css = css_file.read_text(encoding="utf-8")
+
+            st.markdown(
+                f"<style>{css}</style>",
+                unsafe_allow_html=True
+            )
+
+        else:
+
+            st.warning(f"CSS tidak ditemukan: {css_file}")
+
+
+@st.cache_data(show_spinner=False)
+def encode_image(path_string):
+
+    return base64.b64encode(
+        Path(path_string).read_bytes()
+    ).decode("utf-8")
+
+
+def apply_background():
+
+    if not BACKGROUND_PATH.exists():
+
+        st.warning(
+            f"Background WisBot tidak ditemukan: {BACKGROUND_PATH}"
+        )
+
+        return
+
+    mime = (
+        "image/png"
+        if BACKGROUND_PATH.suffix.lower() == ".png"
+        else "image/jpeg"
     )
 
-    df["reviewsCount"] = pd.to_numeric(
-        df["reviewsCount"],
-        errors="coerce"
-    ).fillna(0)
+    encoded = encode_image(str(BACKGROUND_PATH))
 
-    return df
+    st.markdown(
+        f"""
+        <style>
+        [data-testid="stMain"] {{
+            background-image:
+                linear-gradient(
+                    rgba(235, 244, 253, 0.30),
+                    rgba(235, 244, 253, 0.10)
+                ),
+                url("data:{mime};base64,{encoded}");
 
+            background-size: cover;
+            background-position: center bottom;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+        }}
 
-destinations = load_destinations()
-
-
-# ============================================================
-# 4. SESSION STATE
-# ============================================================
-
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
-if "pending_prompt" not in st.session_state:
-    st.session_state.pending_prompt = None
-
-
-# ============================================================
-# 5. HEADER
-# ============================================================
-
-header_col1, header_col2 = st.columns([8, 1])
-
-with header_col1:
-
-    st.title("🌿 WisaBot")
-
-    st.caption(
-        "🟢 Online · Asisten wisata Kulon Progo"
+        [data-testid="stMainBlockContainer"],
+        [data-testid="stHeader"] {{
+            background: transparent !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True
     )
 
-with header_col2:
 
-    if st.button(
-        "↻",
-        help="Mulai percakapan baru",
-        use_container_width=True
-    ):
-
-        st.session_state.chat_history = []
-        st.session_state.pending_prompt = None
-
-        st.rerun()
-
-
-st.divider()
+load_css()
+apply_background()
 
 
 # ============================================================
-# 6. UTILITIES
+# CONFIGURATION
 # ============================================================
 
-def normalize_text(text):
+# Kolom gambar yang dicari pada destinasi_clean.csv
+IMAGE_COLUMNS = [
+    "imageUrl",
+    "image_url",
+    "image",
+    "thumbnail",
+    "photo",
+    "imageUrls/0",
+]
 
-    text = str(text).lower()
+# Kartu menu pada welcome section
+QUICK_PROMPTS = [
+    {
+        "icon": "⛰️",
+        "art": "🏔️",
+        "title": "Rekomendasi Wisata",
+        "desc": "Dapatkan rekomendasi destinasi sesuai minatmu",
+        "question": "Rekomendasi wisata",
+    },
+    {
+        "icon": "🏆",
+        "art": "📷",
+        "title": "Destinasi Paling Populer",
+        "desc": "Lihat destinasi dengan jumlah review terbanyak",
+        "question": "Destinasi paling populer",
+    },
+    {
+        "icon": "💚",
+        "art": "⭐",
+        "title": "Review Positif Terbanyak",
+        "desc": "Temukan destinasi dengan ulasan positif terbanyak",
+        "question": "Destinasi dengan review positif paling banyak",
+    },
+    {
+        "icon": "🗓️",
+        "art": "🗺️",
+        "title": "Buat Itinerary",
+        "desc": "Rencanakan perjalananmu di Kulon Progo",
+        "question": "Buat itinerary 1 hari",
+    },
+]
 
-    text = re.sub(
-        r"[^a-z0-9\s]",
-        " ",
-        text
+# Chip "Coba tanyakan, misalnya"
+TRY_QUESTIONS = [
+    "Rekomendasikan wisata alam",
+    "Pantai untuk liburan santai",
+    "Tempat kuliner enak",
+    "Buat itinerary 1 hari",
+]
+
+# Kategori wisata (pilihan kategori)
+WISATA_CATEGORIES = [
+    {"icon": "🏖️", "label": "Pantai", "query": "Rekomendasi wisata pantai"},
+    {"icon": "🌳", "label": "Wisata Alam", "query": "Rekomendasi wisata alam"},
+    {"icon": "💧", "label": "Air Terjun", "query": "Rekomendasi wisata air terjun"},
+    {"icon": "🏡", "label": "Desa Wisata & Budaya", "query": "Rekomendasi desa wisata dan budaya"},
+    {"icon": "🌺", "label": "Taman & Kebun", "query": "Rekomendasi wisata taman dan kebun"},
+    {"icon": "🌄", "label": "Panorama", "query": "Rekomendasi wisata panorama"},
+]
+
+CATEGORY_ICONS = {
+    "Pantai": "🏖️",
+    "Wisata Air": "💧",
+    "Desa & Budaya": "🏡",
+    "Kuliner": "🍽️",
+    "Taman & Kebun": "🌺",
+    "Panorama": "🌄",
+    "Wisata Alam": "🌳",
+    "Lainnya": "📍",
+}
+
+CATEGORY_CLASSES = {
+    "Pantai": "wb-cat-pantai",
+    "Wisata Air": "wb-cat-air",
+    "Desa & Budaya": "wb-cat-desa",
+    "Kuliner": "wb-cat-kuliner",
+    "Taman & Kebun": "wb-cat-taman",
+    "Panorama": "wb-cat-panorama",
+    "Wisata Alam": "wb-cat-alam",
+    "Lainnya": "wb-cat-lain",
+}
+
+CATEGORY_REASONS = {
+    "Pantai": "Menikmati suasana laut dan waktu santai",
+    "Wisata Air": "Bermain air dan menikmati kesegaran alam",
+    "Desa & Budaya": "Mengenal budaya dan kehidupan desa",
+    "Kuliner": "Mencicipi makanan dan nongkrong santai",
+    "Taman & Kebun": "Berjalan santai di tengah tanaman",
+    "Panorama": "Healing dan menikmati pemandangan",
+    "Wisata Alam": "Udara segar dan suasana alam",
+    "Lainnya": "Menambah pilihan liburanmu",
+}
+
+ITINERARY_KEYWORDS = [
+    "itinerary",
+    "rencana perjalanan",
+    "jadwal wisata",
+]
+
+ITINERARY_SLOTS = [
+    ("🌅", "Pagi", "08.00"),
+    ("☀️", "Siang", "12.00"),
+    ("🌇", "Sore", "16.00"),
+]
+
+DEFAULT_SUGGESTIONS = [
+    ("🌿", "Rekomendasi wisata"),
+    ("🏆", "Destinasi paling populer"),
+    ("💚", "Destinasi dengan review positif paling banyak"),
+    ("🗓️", "Buat itinerary 1 hari"),
+]
+
+TYPING_HTML = (
+    '<div class="wb-typing">'
+    '<div class="wb-typing-icon">🤖</div>'
+    '<div class="wb-typing-bubble">'
+    '<div class="wb-typing-text">Sedang mencari destinasi terbaik untukmu</div>'
+    '<div class="wb-dots"><span></span><span></span><span></span></div>'
+    '</div>'
+    '</div>'
+)
+
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+
+if "wisbot_messages" not in st.session_state:
+    st.session_state.wisbot_messages = []
+
+if "wisbot_recommendation_state" not in st.session_state:
+    st.session_state.wisbot_recommendation_state = None
+
+
+# ============================================================
+# HELPER
+# ============================================================
+
+def to_html(value):
+    """Escape teks agar aman dimasukkan ke HTML."""
+
+    return escape(str(value)).replace("$", "&#36;")
+
+
+def rating_label(value):
+
+    number = safe_float(value)
+
+    if number is None:
+        return "Tidak tersedia"
+
+    return f"{number:.1f} / 5"
+
+
+def get_image_url(row):
+    """Mengambil URL gambar destinasi (jika ada di dataset)."""
+
+    if row is None:
+        return ""
+
+    for column in IMAGE_COLUMNS:
+
+        try:
+            value = row.get(column)
+        except AttributeError:
+            return ""
+
+        if value is None or pd.isna(value):
+            continue
+
+        value = str(value).strip()
+
+        if value.lower().startswith(("http://", "https://")):
+            return value
+
+    return ""
+
+
+def photo_html(image_url, category, css_class=""):
+    """Foto destinasi, atau gradient + ikon kategori jika tidak ada foto."""
+
+    if image_url:
+        return (
+            f'<img class="wb-photo {css_class}" '
+            f'src="{escape(image_url, quote=True)}" '
+            'alt="" loading="lazy">'
+        )
+
+    icon = CATEGORY_ICONS.get(category, "📍")
+
+    return (
+        f'<div class="wb-photo wb-photo-fallback {css_class}">{icon}</div>'
     )
 
-    text = re.sub(
-        r"\s+",
-        " ",
-        text
+
+def chip_html(category):
+
+    css_class = CATEGORY_CLASSES.get(category, "wb-cat-lain")
+
+    icon = CATEGORY_ICONS.get(category, "📍")
+
+    return (
+        f'<span class="wb-chip {css_class}">'
+        f'{icon} {to_html(category)}</span>'
     )
 
-    return text.strip()
+
+def rank_class(rank):
+
+    return {1: "gold", 2: "silver", 3: "bronze"}.get(rank, "plain")
 
 
-def safe_value(value, default="Tidak tersedia"):
+def maps_url_for(name, address):
 
-    if pd.isna(value):
-        return default
+    query = quote(f"{name}, {address}, Kulon Progo, Yogyakarta")
+
+    return (
+        "https://www.google.com/maps/search/?api=1"
+        f"&query={query}"
+    )
+
+
+def clean_address(value):
+
+    if value is None or pd.isna(value):
+        return "Kulon Progo, Yogyakarta"
 
     value = str(value).strip()
 
-    if not value or value.lower() == "nan":
-        return default
+    if value.lower() in ["", "nan", "none"]:
+        return "Kulon Progo, Yogyakarta"
 
     return value
 
 
-def get_rating(row):
+def add_message(role, content="", kind="text", data=None, suggestions=None):
 
-    rating = row.get("totalScore")
-
-    if pd.isna(rating):
-        return "Belum tersedia"
-
-    return f"{float(rating):.1f}/5"
-
-
-def get_reviews(row):
-
-    value = row.get("reviewsCount", 0)
-
-    if pd.isna(value):
-        return 0
-
-    return int(value)
+    st.session_state.wisbot_messages.append(
+        {
+            "role": role,
+            "content": content,
+            "kind": kind,
+            "data": data,
+            "suggestions": suggestions or [],
+        }
+    )
 
 
-def get_maps_link(row):
+def is_general_recommendation(question):
+    """Rekomendasi umum tanpa kategori -> tampilkan pilihan kategori."""
 
-    latitude = row.get("latitude")
-    longitude = row.get("longitude")
+    normalized_question = str(question).lower().strip()
 
-    if pd.isna(latitude) or pd.isna(longitude):
-        return None
+    recommendation_triggers = [
+        "rekomendasi wisata",
+        "rekomendasikan wisata",
+        "rekomendasi tempat wisata",
+        "rekomendasi destinasi"
+    ]
+
+    category_words = [
+        "pantai",
+        "alam",
+        "air terjun",
+        "kuliner",
+        "desa",
+        "budaya",
+        "taman",
+        "kebun",
+        "panorama",
+        "bukit"
+    ]
 
     return (
-        "https://www.google.com/maps/search/?api=1"
-        f"&query={latitude},{longitude}"
+        any(
+            trigger in normalized_question
+            for trigger in recommendation_triggers
+        )
+        and not any(
+            word in normalized_question
+            for word in category_words
+        )
     )
 
 
 # ============================================================
-# 7. DESTINATION CARD
+# DATA: POPULER & REVIEW POSITIF (di-cache)
 # ============================================================
 
-def show_destination(row):
+@st.cache_data(show_spinner=False)
+def get_popular_data(limit=5):
 
-    name = safe_value(row.get("title"))
-    category = safe_value(row.get("categoryName"))
-    address = safe_value(row.get("address"))
+    result = popular_destinations(limit)
 
-    rating = get_rating(row)
-    reviews = get_reviews(row)
-    maps_link = get_maps_link(row)
-
-    with st.container(border=True):
-
-        st.markdown(f"### 📍 {name}")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.metric(
-                "⭐ Rating",
-                rating
-            )
-
-        with col2:
-            st.metric(
-                "💬 Jumlah Ulasan",
-                f"{reviews:,}"
-            )
-
-        st.write(f"🏷️ **Kategori:** category")
-
-        st.write(f"📌 **Alamat:** {address}")
-
-        if maps_link:
-            st.link_button(
-                "📍 Buka Google Maps",
-                maps_link,
-                use_container_width=True
-            )
-
-
-def show_multiple_destinations(df):
-
-    if df is None or df.empty:
-        return
-
-    for _, row in df.iterrows():
-        show_destination(row)
-
-
-# ============================================================
-# 8. SEARCH DESTINATION
-# ============================================================
-
-def search_destination(keyword):
-
-    keyword = normalize_text(keyword)
-
-    if not keyword:
+    if result is None or result.empty:
         return []
 
-    results = []
+    items = []
 
-    for _, row in destinations.iterrows():
+    for _, row in result.iterrows():
 
-        title = normalize_text(row["title"])
-        category = normalize_text(row["categoryName"])
-        address = normalize_text(row["address"])
-
-        score = 0
-
-        if keyword in title:
-            score = 100
-
-        elif keyword in category:
-            score = 70
-
-        elif keyword in address:
-            score = 40
-
-        else:
-
-            similarity = SequenceMatcher(
-                None,
-                keyword,
-                title
-            ).ratio()
-
-            if similarity >= 0.55:
-                score = similarity * 50
-
-        if score > 0:
-
-            results.append({
-                "score": score,
-                "row": row
-            })
-
-    results.sort(
-        key=lambda item: item["score"],
-        reverse=True
-    )
-
-    return results
-
-
-# ============================================================
-# 9. CATEGORY KEYWORDS
-# ============================================================
-
-CATEGORY_KEYWORDS = {
-
-    "pantai": [
-        "pantai",
-        "laut",
-        "pesisir"
-    ],
-
-    "alam": [
-        "alam",
-        "hutan",
-        "gunung",
-        "bukit",
-        "pemandangan",
-        "panorama",
-        "air terjun",
-        "sungai",
-        "perbukitan"
-    ],
-
-    "sejarah": [
-        "sejarah",
-        "historis",
-        "heritage",
-        "budaya",
-        "museum"
-    ],
-
-    "religi": [
-        "religi",
-        "ziarah",
-        "makam",
-        "masjid"
-    ],
-
-    "rekreasi": [
-        "rekreasi",
-        "hiburan",
-        "keluarga",
-        "taman",
-        "bermain"
-    ],
-
-    "kuliner": [
-        "kuliner",
-        "makan",
-        "restoran",
-        "warung",
-        "cafe",
-        "kafe",
-        "kopi"
-    ],
-
-    "instagramable": [
-        "instagramable",
-        "instagram",
-        "estetik",
-        "foto",
-        "selfie",
-        "spot foto"
-    ],
-
-    "healing": [
-        "healing",
-        "tenang",
-        "santai",
-        "relax",
-        "relaksasi"
-    ]
-}
-
-
-# ============================================================
-# 10. CATEGORY MATCHING
-# ============================================================
-
-def get_category_matches(category):
-
-    keywords = CATEGORY_KEYWORDS.get(category, [])
-
-    results = []
-
-    for _, row in destinations.iterrows():
-
-        text = normalize_text(
-            f"{row['title']} "
-            f"{row['categoryName']} "
-            f"{row['address']}"
+        items.append(
+            {
+                "name": str(row["title"]),
+                "reviews": format_number(row.get("reviews_num")),
+                "rating": rating_label(row.get("totalScore")),
+                "category": str(row.get("kategori", "Lainnya")),
+                "image": get_image_url(row),
+            }
         )
 
-        if any(
-            normalize_text(keyword) in text
-            for keyword in keywords
-        ):
-            results.append(row)
+    return items
 
-    if not results:
-        return pd.DataFrame()
 
-    return pd.DataFrame(results)
+@st.cache_data(show_spinner=False)
+def get_positive_data(limit=5):
+
+    result = positive_review_destinations(limit)
+
+    if result is None or result.empty:
+        return []
+
+    items = []
+
+    for _, row in result.iterrows():
+
+        name = str(row["title"])
+
+        destination = get_destination(name)
+
+        category = (
+            str(destination.get("kategori", "Lainnya"))
+            if destination is not None
+            else "Lainnya"
+        )
+
+        items.append(
+            {
+                "name": name,
+                "rating": rating_label(row.get("rating")),
+                "positive": int(row["positive"]),
+                "neutral": int(row["neutral"]),
+                "negative": int(row["negative"]),
+                "percentage": float(row["positive_percentage"]),
+                "category": category,
+                "image": get_image_url(destination),
+            }
+        )
+
+    return items
 
 
 # ============================================================
-# 11. RANK DESTINATIONS
+# HTML: PANEL POPULER
 # ============================================================
 
-def rank_destinations(df):
+def build_popular_html(items):
 
-    if df is None or df.empty:
-        return df
+    cards = ""
 
-    df = df.copy()
+    for rank, item in enumerate(items, start=1):
 
-    df["totalScore"] = pd.to_numeric(
-        df["totalScore"],
-        errors="coerce"
+        cards += (
+            '<div class="wb-pop-card">'
+            '<div class="wb-pop-media">'
+            f'{photo_html(item["image"], item["category"])}'
+            f'<span class="wb-rank wb-rank-{rank_class(rank)}">{rank}</span>'
+            '</div>'
+            f'<div class="wb-pop-name">{to_html(item["name"])}</div>'
+            f'<div class="wb-pop-meta">💬 {to_html(item["reviews"])} ulasan</div>'
+            f'<div class="wb-pop-meta">⭐ {to_html(item["rating"])}</div>'
+            f'{chip_html(item["category"])}'
+            '</div>'
+        )
+
+    return (
+        '<div class="wb-panel">'
+        '<div class="wb-panel-head">'
+        '<div>'
+        '<div class="wb-panel-title">🏆 Destinasi Paling Populer</div>'
+        '<div class="wb-panel-sub">'
+        'Diurutkan berdasarkan jumlah review terbanyak pada dataset.'
+        '</div>'
+        '</div>'
+        '<div class="wb-panel-deco">🔭📍</div>'
+        '</div>'
+        f'<div class="wb-pop-grid">{cards}</div>'
+        '</div>'
     )
 
-    df["reviewsCount"] = pd.to_numeric(
-        df["reviewsCount"],
-        errors="coerce"
-    ).fillna(0)
 
-    return df.sort_values(
-        by=["totalScore", "reviewsCount"],
-        ascending=False,
-        na_position="last"
+# ============================================================
+# HTML: PANEL REVIEW POSITIF
+# ============================================================
+
+def build_positive_html(items):
+
+    rows = ""
+
+    for rank, item in enumerate(items, start=1):
+
+        positive = item["positive"]
+        neutral = item["neutral"]
+        negative = item["negative"]
+
+        total = positive + neutral + negative
+
+        if total > 0:
+            width_positive = positive / total * 100
+            width_neutral = neutral / total * 100
+            width_negative = negative / total * 100
+        else:
+            width_positive = width_neutral = width_negative = 0
+
+        rows += (
+            '<div class="wb-pos-row">'
+            f'<span class="wb-rank wb-rank-{rank_class(rank)}">{rank}</span>'
+            '<div class="wb-pos-photo">'
+            f'{photo_html(item["image"], item["category"])}'
+            '</div>'
+            '<div>'
+            f'<div class="wb-pos-name">{to_html(item["name"])}</div>'
+            f'<div class="wb-pos-meta">⭐ {to_html(item["rating"])}</div>'
+            '<div class="wb-pos-meta">📍 Kulon Progo</div>'
+            '</div>'
+            '<div class="wb-pos-counts">'
+            f'<div><i class="wb-dot wb-dot-pos"></i>Positif: <b>{positive}</b></div>'
+            f'<div><i class="wb-dot wb-dot-neu"></i>Netral: <b>{neutral}</b></div>'
+            f'<div><i class="wb-dot wb-dot-neg"></i>Negatif: <b>{negative}</b></div>'
+            '</div>'
+            '<div class="wb-bar">'
+            f'<span class="wb-bar-pos" style="width:{width_positive:.1f}%"></span>'
+            f'<span class="wb-bar-neu" style="width:{width_neutral:.1f}%"></span>'
+            f'<span class="wb-bar-neg" style="width:{width_negative:.1f}%"></span>'
+            '</div>'
+            '<div class="wb-pct">'
+            f'<b>{item["percentage"]:.1f}%</b>'
+            '<span>ulasan positif</span>'
+            '</div>'
+            '</div>'
+        )
+
+    return (
+        '<div class="wb-panel">'
+        '<div class="wb-panel-head">'
+        '<div>'
+        '<div class="wb-panel-title">💚 Destinasi dengan Review Positif Terbanyak</div>'
+        '<div class="wb-panel-sub">Diurutkan berdasarkan jumlah review positif.</div>'
+        '</div>'
+        '<div class="wb-panel-deco">👍</div>'
+        '</div>'
+        f'<div class="wb-pos-list">{rows}</div>'
+        '</div>'
     )
 
 
 # ============================================================
-# 12. RANDOM DESTINATION
+# REKOMENDASI KATEGORI (KARTU)
 # ============================================================
 
-def get_random_destination(category=None):
+def build_cards(result):
+
+    cards = []
+
+    for _, row in result.iterrows():
+
+        name = str(row.get("title", "Destinasi"))
+
+        address = clean_address(row.get("address"))
+
+        cards.append(
+            {
+                "name": name,
+                "category": str(row.get("kategori", "Lainnya")),
+                "address": address,
+                "rating": rating_label(row.get("totalScore")),
+                "maps_url": maps_url_for(name, address),
+                "image": get_image_url(row),
+            }
+        )
+
+    return cards
+
+
+def build_cards_html(cards):
+
+    items = ""
+
+    for rank, card in enumerate(cards, start=1):
+
+        category = card["category"]
+
+        reason = CATEGORY_REASONS.get(
+            category,
+            CATEGORY_REASONS["Lainnya"]
+        )
+
+        items += (
+            '<div class="wb-card">'
+            '<div class="wb-card-cover">'
+            f'{photo_html(card["image"], category)}'
+            f'<span class="wb-rank wb-rank-{rank_class(rank)}">{rank}</span>'
+            '</div>'
+            '<div class="wb-card-body">'
+            f'{chip_html(category)}'
+            f'<div class="wb-card-name">{to_html(card["name"])}</div>'
+            f'<div class="wb-card-loc">📍 {to_html(card["address"])}</div>'
+            f'<div class="wb-card-rating">⭐ {to_html(card["rating"])}</div>'
+            f'<div class="wb-card-reason">✨ Cocok untuk: {to_html(reason)}</div>'
+            f'<a class="wb-link" href="{escape(card["maps_url"], quote=True)}" '
+            'target="_blank" rel="noopener noreferrer">'
+            'Lihat lokasi di Google Maps ↗</a>'
+            '</div>'
+            '</div>'
+        )
+
+    return f'<div class="wb-cards">{items}</div>'
+
+
+# ============================================================
+# ITINERARY 1 HARI
+# ============================================================
+
+def distance_km(row_a, row_b):
+    """Jarak antar dua destinasi (haversine). inf jika koordinat kosong."""
+
+    lat1 = safe_float(row_a.get("latitude"))
+    lon1 = safe_float(row_a.get("longitude"))
+    lat2 = safe_float(row_b.get("latitude"))
+    lon2 = safe_float(row_b.get("longitude"))
+
+    if None in (lat1, lon1, lat2, lon2):
+        return float("inf")
+
+    d_lat = math.radians(lat2 - lat1)
+    d_lon = math.radians(lon2 - lon1)
+
+    a = (
+        math.sin(d_lat / 2) ** 2
+        + math.cos(math.radians(lat1))
+        * math.cos(math.radians(lat2))
+        * math.sin(d_lon / 2) ** 2
+    )
+
+    return 6371 * 2 * math.asin(math.sqrt(a))
+
+
+def build_itinerary(question):
+    """
+    Itinerary 1 hari: destinasi dengan rating tertinggi,
+    ditambah dua destinasi terdekat darinya.
+    """
+
+    if DESTINATIONS is None or DESTINATIONS.empty:
+        return None
+
+    category = extract_category_preference(question)
+
+    df = DESTINATIONS.copy()
 
     if category:
 
-        filtered = get_category_matches(category)
+        filtered = df[df["kategori"] == category]
 
-        if filtered.empty:
-            return None
+        if len(filtered) >= 3:
+            df = filtered
 
-        return filtered.sample(1).iloc[0]
+    df = df.sort_values(
+        ["rating_num", "reviews_num"],
+        ascending=False,
+        na_position="last"
+    ).head(15)
 
-    if destinations.empty:
+    rows = [row for _, row in df.iterrows()]
+
+    if not rows:
         return None
 
-    return destinations.sample(1).iloc[0]
-
-
-# ============================================================
-# 13. INTENT DETECTION
-# ============================================================
-
-def detect_intent(message):
-
-    text = normalize_text(message)
-
-    greeting_keywords = [
-        "halo",
-        "hai",
-        "hello",
-        "hi",
-        "hey",
-        "selamat pagi",
-        "selamat siang",
-        "selamat sore",
-        "selamat malam"
-    ]
-
-    if any(keyword in text for keyword in greeting_keywords):
-        return "greeting"
-
-    help_keywords = [
-        "bisa apa",
-        "fitur",
-        "bantuan",
-        "help",
-        "cara menggunakan",
-        "kamu bisa apa"
-    ]
-
-    if any(keyword in text for keyword in help_keywords):
-        return "help"
-
-    random_keywords = [
-        "acak",
-        "random",
-        "terserah",
-        "bebas",
-        "kejutan",
-        "pilihkan",
-        "pilih tempat",
-        "rekomendasi secara acak"
-    ]
-
-    if any(keyword in text for keyword in random_keywords):
-        return "random"
-
-    popular_keywords = [
-        "paling populer",
-        "terpopuler",
-        "paling banyak review",
-        "paling banyak ulasan",
-        "paling ramai"
-    ]
-
-    if any(keyword in text for keyword in popular_keywords):
-        return "popular"
-
-    ranking_keywords = [
-        "rating tertinggi",
-        "rating terbaik",
-        "wisata terbaik",
-        "destinasi terbaik",
-        "paling bagus",
-        "top destinasi"
-    ]
-
-    if any(keyword in text for keyword in ranking_keywords):
-        return "ranking"
-
-    # Kategori
-    for category, keywords in CATEGORY_KEYWORDS.items():
-
-        if any(
-            normalize_text(keyword) in text
-            for keyword in keywords
-        ):
-            return f"category_{category}"
-
-    search_keywords = [
-        "cari",
-        "informasi",
-        "info",
-        "tentang",
-        "dimana",
-        "lokasi",
-        "alamat"
-    ]
-
-    if any(keyword in text for keyword in search_keywords):
-        return "search"
-
-    return "unknown"
-
-
-# ============================================================
-# 14. CATEGORY RESPONSE
-# ============================================================
-
-def category_response(category):
-
-    results = get_category_matches(category)
-
-    if results.empty:
-
-        return (
-            "Hmm, aku belum menemukan destinasi yang cocok "
-            "dengan kategori tersebut dari data yang tersedia. 😊 "
-            "Coba kategori wisata lainnya ya!",
-            None
-        )
-
-    results = rank_destinations(results).head(5)
-
-    templates = [
-        f"🌿 Kalau kamu mencari wisata {category}, berikut beberapa tempat yang bisa kamu pertimbangkan.",
-        "Aku punya beberapa rekomendasi menarik nih! ✨ Mungkin ada yang cocok dengan rencana jalan-jalanmu.",
-        "Siap! Ini beberapa destinasi yang berhasil aku temukan untukmu. 😊",
-        "Wah, seru! Berikut pilihan destinasi yang bisa kamu jelajahi."
-    ]
-
-    return random.choice(templates), results
-
-
-# ============================================================
-# 15. CHATBOT RESPONSE
-# ============================================================
-
-def chatbot_response(message):
-
-    text = normalize_text(message)
-    intent = detect_intent(message)
-
-    # Greeting
-    if intent == "greeting":
-
-        responses = [
-            "Halo! 👋 Mau jalan-jalan ke Kulon Progo? Aku bisa bantu menemukan destinasi menarik.",
-            "Hai! 🌿 Selamat datang. Lagi mencari tempat wisata untuk dikunjungi?",
-            "Halo traveler! ✨ Mau mencari wisata alam, pantai, kuliner, atau tempat seru lainnya?"
-        ]
-
-        return random.choice(responses), None
-
-    # Help
-    if intent == "help":
-
-        response = """
-Aku bisa bantu kamu mencari berbagai destinasi wisata di Kulon Progo! 🌿
-
-Kamu bisa mencoba:
-
-- 🏖️ Rekomendasi wisata pantai
-- 🌳 Wisata alam
-- 📸 Tempat instagramable
-- 🧘 Tempat untuk healing
-- 🍽️ Wisata kuliner
-- ⭐ Destinasi dengan rating terbaik
-- 🔎 Mencari destinasi tertentu
-- 🎲 Rekomendasi destinasi secara acak
-
-Coba tanyakan apa yang ingin kamu cari!
-"""
-
-        return response, None
-
-    # Random
-    if intent == "random":
-
-        row = get_random_destination()
-
-        if row is None:
-            return "Maaf, aku belum menemukan destinasi yang bisa direkomendasikan.", None
-
-        responses = [
-            "🎲 Aku punya pilihan spontan untukmu! Bagaimana kalau mencoba destinasi ini?",
-            "✨ Ini rekomendasi acak dariku. Siapa tahu jadi tempat favoritmu!",
-            "🌿 Coba pertimbangkan destinasi ini untuk petualangan berikutnya."
-        ]
-
-        return random.choice(responses), row.to_frame().T
-
-    # Popular
-    if intent == "popular":
-
-        results = destinations.sort_values(
-            "reviewsCount",
-            ascending=False
-        ).head(5)
-
-        return (
-            "🔥 Berikut destinasi dengan jumlah ulasan terbanyak berdasarkan dataset WisataKP.",
-            results
-        )
-
-    # Ranking
-    if intent == "ranking":
-
-        results = destinations.sort_values(
-            ["totalScore", "reviewsCount"],
-            ascending=False
-        ).head(5)
-
-        return (
-            "⭐ Ini beberapa destinasi dengan rating tertinggi dalam dataset WisataKP.",
-            results
-        )
-
-    # Category
-    if intent.startswith("category_"):
-
-        category = intent.replace("category_", "")
-
-        return category_response(category)
-
-    # Search
-    search_results = search_destination(message)
-
-    if search_results:
-
-        first = search_results[0]
-
-        if first["score"] >= 60:
-
-            row = first["row"]
-
-            responses = [
-                f"✨ Aku menemukan destinasi **{row['title']}**! Berikut informasi yang tersedia.",
-                f"Ini dia destinasi yang kamu cari! 😊 Aku menemukan **{row['title']}**.",
-                f"Yup, aku menemukan informasinya. Berikut detail **{row['title']}**."
-            ]
-
-            return random.choice(responses), row.to_frame().T
-
-        results = pd.DataFrame(
-            [
-                item["row"]
-                for item in search_results[:5]
-            ]
-        )
-
-        return (
-            "Aku menemukan beberapa destinasi yang mungkin sesuai dengan pencarianmu. 😊",
-            results
-        )
-
-    # Unknown
-    responses = [
-        "Hmm, aku belum memahami pertanyaanmu sepenuhnya. 😊 Coba sebutkan nama destinasi atau jenis wisata yang ingin kamu cari.",
-        "Aku belum menemukan informasi yang cocok nih. 🌿 Kamu bisa mencoba bertanya tentang wisata pantai, alam, kuliner, atau nama destinasi.",
-        "Boleh coba gunakan kata kunci lain? ✨ Misalnya pantai, wisata alam, healing, kuliner, atau nama tempat yang ingin kamu kunjungi."
-    ]
-
-    return random.choice(responses), None
-
-
-# ============================================================
-# 16. QUICK PROMPTS
-# ============================================================
-
-quick_prompts = [
-    "🏖️ Rekomendasi wisata pantai",
-    "🌿 Wisata alam yang menarik",
-    "📸 Tempat instagramable",
-    "🧘 Tempat untuk healing",
-    "⭐ Wisata dengan rating terbaik",
-    "🎲 Pilihkan wisata secara acak"
-]
-
-
-# ============================================================
-# 17. EMPTY CHAT
-# ============================================================
-
-if not st.session_state.chat_history:
-
-    st.markdown("## Halo, Traveler! 👋")
-
-    st.write(
-        "Mau menjelajahi destinasi wisata Kulon Progo? "
-        "Ceritakan tempat seperti apa yang kamu cari."
+    seed = rows[0]
+
+    others = sorted(
+        rows[1:],
+        key=lambda row: distance_km(seed, row)
     )
 
-    st.markdown("### ✨ Mulai dari sini")
+    picks = [seed] + others[:2]
 
-    cols = st.columns(2)
+    items = []
 
-    for index, prompt in enumerate(quick_prompts):
+    for (icon, slot, time_label), row in zip(ITINERARY_SLOTS, picks):
 
-        with cols[index % 2]:
+        name = str(row.get("title", "Destinasi"))
 
-            if st.button(
-                prompt,
-                key=f"quick_{index}",
-                use_container_width=True
-            ):
+        address = clean_address(row.get("address"))
 
-                st.session_state.pending_prompt = prompt
+        items.append(
+            {
+                "icon": icon,
+                "slot": slot,
+                "time": time_label,
+                "name": name,
+                "category": str(row.get("kategori", "Lainnya")),
+                "address": address,
+                "rating": rating_label(row.get("totalScore")),
+                "maps_url": maps_url_for(name, address),
+                "image": get_image_url(row),
+            }
+        )
 
-                st.rerun()
+    return items
+
+
+def build_itinerary_html(items):
+
+    rows = ""
+
+    for item in items:
+
+        rows += (
+            '<div class="wb-trip-row">'
+            '<div class="wb-trip-time">'
+            f'{item["icon"]}<b>{item["slot"]}</b><span>{item["time"]}</span>'
+            '</div>'
+            '<div class="wb-trip-photo">'
+            f'{photo_html(item["image"], item["category"])}'
+            '</div>'
+            '<div class="wb-trip-body">'
+            f'{chip_html(item["category"])}'
+            f'<div class="wb-pos-name">{to_html(item["name"])}</div>'
+            f'<div class="wb-pos-meta">⭐ {to_html(item["rating"])} · '
+            f'📍 {to_html(item["address"])}</div>'
+            f'<a class="wb-link" href="{escape(item["maps_url"], quote=True)}" '
+            'target="_blank" rel="noopener noreferrer">'
+            'Lihat lokasi di Google Maps ↗</a>'
+            '</div>'
+            '</div>'
+        )
+
+    return (
+        '<div class="wb-panel">'
+        '<div class="wb-panel-head">'
+        '<div>'
+        '<div class="wb-panel-title">🗓️ Itinerary 1 Hari di Kulon Progo</div>'
+        '<div class="wb-panel-sub">'
+        'Disusun dari rating tertinggi dan destinasi yang saling berdekatan.'
+        '</div>'
+        '</div>'
+        '<div class="wb-panel-deco">🗺️</div>'
+        '</div>'
+        f'<div class="wb-trip-list">{rows}</div>'
+        '<div class="wb-trip-note">'
+        'Jam hanya usulan awal. Cek jam buka dan waktu tempuh '
+        'sebelum berangkat.'
+        '</div>'
+        '</div>'
+    )
 
 
 # ============================================================
-
-# ============================================================
-# 18. CHAT HISTORY - CUSTOM LAYOUT STREAMLIT
+# RESPONSE GENERATOR
 # ============================================================
 
-for chat in st.session_state.chat_history:
+def generate_response(question):
+    """
+    Menentukan jenis jawaban:
+    itinerary, populer, review positif, rekomendasi (kartu), atau teks.
+    """
 
-    if chat["role"] == "user":
+    try:
 
-        # Pesan pengguna di sisi kanan
-        left_space, message_col = st.columns([2.5, 7])
+        normalized = str(question).lower()
 
-        with message_col:
-            with st.container(border=True):
-                st.markdown(
-                    f"👤 **Kamu**\n\n{chat['content']}"
+        # Itinerary
+        if any(keyword in normalized for keyword in ITINERARY_KEYWORDS):
+
+            items = build_itinerary(question)
+
+            if items:
+                return {"kind": "itinerary", "content": "", "data": items}
+
+            return {
+                "kind": "text",
+                "content": "Maaf, data destinasi belum tersedia untuk menyusun itinerary.",
+                "data": None,
+            }
+
+        intent = detect_intent(question)
+
+        category = extract_category_preference(question)
+
+        # Destinasi paling populer
+        if intent == "popular":
+
+            items = get_popular_data()
+
+            if items:
+                return {"kind": "popular", "content": "", "data": items}
+
+        # Review positif terbanyak
+        if intent == "positive_reviews":
+
+            items = get_positive_data()
+
+            if items:
+                return {"kind": "positive", "content": "", "data": items}
+
+        # Rekomendasi
+        if intent == "recommendation" or (intent == "unknown" and category):
+
+            result = recommend_destinations(question, limit=5)
+
+            if result is not None and not result.empty:
+
+                category_matched = (
+                    category
+                    and "kategori" in result.columns
+                    and (result["kategori"] == category).all()
                 )
 
-    else:
+                if category_matched:
+                    intro = (
+                        "**Aku punya rekomendasi untukmu!** 🌿\n\n"
+                        f"Berikut destinasi **{category}** "
+                        "dengan rating tertinggi di Kulon Progo."
+                    )
+                elif category:
+                    intro = (
+                        "**Aku punya rekomendasi untukmu!** 🌿\n\n"
+                        f"Belum ada destinasi kategori **{category}** "
+                        "di data, jadi ini destinasi dengan rating "
+                        "tertinggi di Kulon Progo."
+                    )
+                else:
+                    intro = (
+                        "**Aku punya rekomendasi untukmu!** 🌿\n\n"
+                        "Berikut destinasi dengan rating tertinggi "
+                        "di Kulon Progo."
+                    )
 
-        # Pesan bot di sisi kiri
-        message_col, right_space = st.columns([7, 2.5])
+                return {
+                    "kind": "recommendation",
+                    "content": intro,
+                    "data": build_cards(result),
+                }
 
-        with message_col:
-            with st.container(border=True):
-                st.markdown(
-                    f"🌿 **WisaBot**\n\n{chat['content']}"
-                )
+        return {
+            "kind": "text",
+            "content": handle_wisbot(question),
+            "data": None,
+        }
 
-                if chat.get("data") is not None:
-                    show_multiple_destinations(chat["data"])
+    except Exception as error:
 
+        print(f"[WisBot Error] {error}")
+
+        return {
+            "kind": "text",
+            "content": (
+                "Maaf, sepertinya terjadi kendala saat memproses "
+                "pertanyaanmu. 😔\n\n"
+                "Coba tanyakan kembali beberapa saat lagi."
+            ),
+            "data": None,
+        }
 
 
 # ============================================================
-# 19. CHAT INPUT
+# SUGGESTED QUESTIONS
+# ============================================================
+
+def build_suggestions(question):
+    """Pertanyaan lanjutan yang mengikuti konteks jawaban."""
+
+    suggestions = []
+
+    try:
+
+        intent = detect_intent(question)
+
+        category = extract_category_preference(question)
+
+        if intent == "recommendation":
+
+            if category == "Pantai":
+                suggestions.append(("🌳", "Rekomendasi wisata alam"))
+            else:
+                suggestions.append(("🏖️", "Rekomendasi wisata pantai"))
+
+        elif intent in ["information", "review"]:
+
+            destination = find_destination(question)
+
+            if destination:
+
+                if intent == "information":
+                    suggestions.append(
+                        ("💬", f"Bagaimana sentimen pengunjung {destination}?")
+                    )
+                else:
+                    suggestions.append(
+                        ("📍", f"Ceritakan tentang {destination}")
+                    )
+
+    except Exception as error:
+
+        print(f"[WisBot Suggestion Error] {error}")
+
+    asked = str(question).strip().lower()
+
+    for icon, text in DEFAULT_SUGGESTIONS:
+
+        if len(suggestions) >= 3:
+            break
+
+        already_added = any(text == item[1] for item in suggestions)
+
+        if text.lower() != asked and not already_added:
+            suggestions.append((icon, text))
+
+    return suggestions[:3]
+
+
+# ============================================================
+# RENDER PESAN
+# ============================================================
+
+def render_message(message):
+
+    kind = message.get("kind", "text")
+
+    data = message.get("data")
+
+    if message.get("content"):
+        st.markdown(message["content"], unsafe_allow_html=False)
+
+    if kind == "recommendation" and data:
+        st.markdown(build_cards_html(data), unsafe_allow_html=True)
+
+    elif kind == "popular" and data:
+        st.markdown(build_popular_html(data), unsafe_allow_html=True)
+
+    elif kind == "positive" and data:
+        st.markdown(build_positive_html(data), unsafe_allow_html=True)
+
+    elif kind == "itinerary" and data:
+        st.markdown(build_itinerary_html(data), unsafe_allow_html=True)
+
+
+# ============================================================
+# HANDLE INPUT
 # ============================================================
 
 user_input = st.chat_input(
-    "Tanyakan destinasi wisata Kulon Progo..."
+    "Tanyakan destinasi, wisata, atau rencana perjalananmu..."
+)
+
+pending_question = st.session_state.pop(
+    "wisbot_pending_question",
+    None
+)
+
+question = user_input or pending_question
+
+needs_response = False
+
+if question:
+
+    question = str(question).strip()
+
+    add_message("user", question)
+
+    # Rekomendasi umum -> pilihan kategori
+    if is_general_recommendation(question):
+
+        add_message(
+            "assistant",
+            "🌿 **Yuk, jelajahi wisata Kulon Progo!**\n\n"
+            "Kamu sedang ingin menikmati wisata yang seperti apa? "
+            "Pilih kategori yang paling menarik buatmu, ya."
+        )
+
+        st.session_state.wisbot_recommendation_state = "choose_category"
+
+    # Pertanyaan biasa -> diproses setelah chat tampil
+    else:
+
+        st.session_state.wisbot_recommendation_state = None
+
+        needs_response = True
+
+
+messages = st.session_state.wisbot_messages
+
+
+# ============================================================
+# 1. HEADER
+# ============================================================
+
+st.markdown(
+    '<div class="wb-header">'
+    '<div class="wb-header-left">'
+    '<div class="wb-logo">🤖</div>'
+    '<div>'
+    '<div class="wb-header-title">WisBot – AI Travel Assistant</div>'
+    '<div class="wb-header-sub">Teman perjalananmu menjelajahi Kulon Progo</div>'
+    '</div>'
+    '</div>'
+    '<div class="wb-online"><span class="wb-online-dot"></span>Online</div>'
+    '</div>',
+    unsafe_allow_html=True
 )
 
 
-# Quick prompt handling
-if st.session_state.pending_prompt:
+# ============================================================
+# 2. WELCOME (saat chat masih kosong)
+# ============================================================
 
-    user_input = st.session_state.pending_prompt
+if not messages:
 
-    st.session_state.pending_prompt = None
+    st.markdown(
+        '<div class="wb-hero">'
+        '<div class="wb-hero-title">'
+        'Your Next <span class="wb-hl">Adventure</span> Starts Here ✨'
+        '</div>'
+        '<div class="wb-hero-sub">'
+        'Bingung mau ke mana? Ceritakan perjalanan yang kamu inginkan, '
+        'dan temukan destinasi terbaik di Kulon Progo.'
+        '</div>'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+    prompt_columns = st.columns(4)
+
+    for index, prompt in enumerate(QUICK_PROMPTS):
+
+        with prompt_columns[index]:
+
+            with st.container(key=f"wb_qp_card_{index}"):
+
+                st.markdown(
+                    f'<div class="wb-qp-icon">{prompt["icon"]}</div>'
+                    f'<div class="wb-qp-title">{prompt["title"]}</div>'
+                    f'<div class="wb-qp-desc">{prompt["desc"]}</div>',
+                    unsafe_allow_html=True
+                )
+
+                art_column, button_column = st.columns([3, 1])
+
+                with art_column:
+
+                    st.markdown(
+                        f'<div class="wb-qp-art">{prompt["art"]}</div>',
+                        unsafe_allow_html=True
+                    )
+
+                with button_column:
+
+                    if st.button("→", key=f"wb_qp_{index}"):
+
+                        st.session_state.wisbot_pending_question = (
+                            prompt["question"]
+                        )
+
+                        st.rerun()
+
+    with st.container(key="wb_try"):
+
+        st.markdown(
+            '<div class="wb-try-title">✨ Coba tanyakan, misalnya:</div>',
+            unsafe_allow_html=True
+        )
+
+        try_columns = st.columns(4)
+
+        for index, text in enumerate(TRY_QUESTIONS):
+
+            with try_columns[index]:
+
+                if st.button(
+                    f"💬 {text}",
+                    key=f"wb_try_{index}",
+                    use_container_width=True
+                ):
+
+                    st.session_state.wisbot_pending_question = text
+
+                    st.rerun()
 
 
 # ============================================================
-# 20. PROCESS MESSAGE
+# 3. CONVERSATION AREA
 # ============================================================
 
-if user_input:
+else:
 
-    st.session_state.chat_history.append({
-        "role": "user",
-        "content": user_input,
-        "data": None
-    })
+    toolbar_left, toolbar_right = st.columns([5, 1])
 
-    response, data = chatbot_response(user_input)
+    with toolbar_left:
 
-    st.session_state.chat_history.append({
-        "role": "assistant",
-        "content": response,
-        "data": data
-    })
+        st.markdown(
+            '<div class="wb-toolbar-title">💬 Percakapan</div>',
+            unsafe_allow_html=True
+        )
+
+    with toolbar_right:
+
+        if st.button(
+            "🗑️ Hapus chat",
+            key="wb_clear",
+            use_container_width=True
+        ):
+
+            st.session_state.wisbot_messages = []
+
+            st.session_state.wisbot_recommendation_state = None
+
+            st.session_state.pop("wisbot_pending_question", None)
+
+            st.rerun()
+
+    for message in messages:
+
+        avatar = "🤖" if message["role"] == "assistant" else None
+
+        with st.chat_message(message["role"], avatar=avatar):
+
+            render_message(message)
+
+
+# ============================================================
+# 4. LOADING & RESPONSE
+# ============================================================
+
+if needs_response:
+
+    typing_placeholder = st.empty()
+
+    typing_placeholder.markdown(
+        TYPING_HTML,
+        unsafe_allow_html=True
+    )
+
+    response = generate_response(question)
+
+    add_message(
+        "assistant",
+        response.get("content", ""),
+        kind=response.get("kind", "text"),
+        data=response.get("data"),
+        suggestions=build_suggestions(question)
+    )
 
     st.rerun()
+
+
+# ============================================================
+# 5. CATEGORY PICKER
+# ============================================================
+
+if st.session_state.wisbot_recommendation_state == "choose_category":
+
+    with st.container(key="wb_picker"):
+
+        st.markdown(
+            '<div class="wb-picker-title">🌿 Jelajahi Wisata Kulon Progo</div>'
+            '<div class="wb-picker-sub">'
+            'Pilih kategori yang paling menarik buatmu.'
+            '</div>',
+            unsafe_allow_html=True
+        )
+
+        category_columns = st.columns(3)
+
+        for index, category in enumerate(WISATA_CATEGORIES):
+
+            with category_columns[index % 3]:
+
+                if st.button(
+                    f"{category['icon']} {category['label']}",
+                    key=f"wb_cat_{index}",
+                    use_container_width=True
+                ):
+
+                    st.session_state.wisbot_pending_question = (
+                        category["query"]
+                    )
+
+                    st.session_state.wisbot_recommendation_state = None
+
+                    st.rerun()
+
+
+# ============================================================
+# 6. SUGGESTED QUESTIONS
+# ============================================================
+
+elif messages and messages[-1]["role"] == "assistant":
+
+    suggestions = messages[-1].get("suggestions", [])
+
+    if suggestions:
+
+        with st.container(key="wb_suggest"):
+
+            st.markdown(
+                '<div class="wb-suggest-title">Mungkin kamu juga tertarik</div>',
+                unsafe_allow_html=True
+            )
+
+            for index, (icon, text) in enumerate(suggestions):
+
+                if st.button(
+                    f"{icon}  {text}",
+                    key=f"wb_sg_{len(messages)}_{index}",
+                    use_container_width=True
+                ):
+
+                    st.session_state.wisbot_pending_question = text
+
+                    st.rerun()
+
+
+# ============================================================
+# FOOTER
+# ============================================================
+
+st.markdown(
+    '<div class="wb-footer">'
+    'Powered by WisataKP · Explore more, travel better'
+    '</div>',
+    unsafe_allow_html=True
+)

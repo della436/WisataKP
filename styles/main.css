@@ -1,0 +1,409 @@
+
+/* =========================================================
+   WISATAKP - GLOBAL STYLE
+   Travel Illustration Background
+   ========================================================= */
+
+
+/* =========================================================
+   01. COLOR PALETTE
+   ========================================================= */
+
+:root {
+    --wk-navy: #173B67;
+    --wk-blue: #3478B8;
+    --wk-blue-dark: #245D91;
+    --wk-sky: #A9CCE8;
+    --wk-light-blue: #DCECF9;
+    --wk-ice: #EDF5FB;
+    --wk-background: #F5F9FD;
+    --wk-white: #FFFFFF;
+
+    --wk-text: #243B53;
+    --wk-muted: #70869B;
+    --wk-border: rgba(151, 190, 224, 0.35);
+
+    --wk-shadow:
+        0 8px 28px rgba(66, 111, 155, 0.08);
+
+    --wk-shadow-hover:
+        0 12px 32px rgba(66, 111, 155, 0.15);
+
+    --wk-radius: 18px;
+    --wk-radius-lg: 24px;
+}
+
+
+/* =========================================================
+   02. GLOBAL APPLICATION BACKGROUND
+   ========================================================= */
+
+.stApp {
+    background-image:
+        linear-gradient(
+            rgba(245, 249, 253, 0.10),
+            rgba(245, 249, 253, 0.10)
+        ),
+        url("assets/images/kp.png");
+
+    background-size: cover;
+    background-position: center top;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+
+    color: var(--wk-text);
+    font-family: "Inter", "Segoe UI", sans-serif;
+}
+
+/* Remove old background decorations */
+.stApp::before,
+.stApp::after {
+    content: none !important;
+    display: none !important;
+}
+
+
+/* =========================================================
+   03. MAIN CONTENT
+   ========================================================= */
+
+.main .block-container {
+    max-width: 1400px;
+    padding-top: 2rem;
+    padding-bottom: 3rem;
+}
+
+
+/* =========================================================
+   04. TYPOGRAPHY
+   ========================================================= */
+
+html,
+body,
+.stApp {
+    font-family: "Inter", "Segoe UI", sans-serif;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5 {
+    color: var(--wk-navy);
+    font-weight: 700;
+    letter-spacing: -0.4px;
+}
+
+p,
+label,
+span {
+    color: inherit;
+}
+
+/* ==========================================================
+   GLOBAL SIDEBAR - WISATAKP
+   ========================================================== */
+
+/* Background sidebar */
+section[data-testid="stSidebar"] {
+    background: #EAF3FB !important;
+    border-right: 1px solid #C9DDEE !important;
+}
+
+/* Sidebar inner container */
+section[data-testid="stSidebar"] > div {
+    background: transparent !important;
+}
+
+/* Navigation container */
+section[data-testid="stSidebarNav"] {
+    background: transparent !important;
+    padding: 12px 10px !important;
+}
+
+/* Semua menu */
+section[data-testid="stSidebarNav"] a {
+    border-radius: 14px !important;
+    padding: 12px 14px !important;
+    margin: 5px 0 !important;
+    border: 1px solid transparent !important;
+    background: transparent !important;
+    transition: all 0.2s ease !important;
+}
+
+/* Text menu */
+section[data-testid="stSidebarNav"] a span {
+    color: #173B67 !important;
+    font-weight: 500 !important;
+}
+
+/* Hover */
+section[data-testid="stSidebarNav"] a:hover {
+    background: #D5E7F6 !important;
+    border-color: #C5DCEE !important;
+}
+
+/* Menu aktif */
+section[data-testid="stSidebarNav"] a[aria-current="page"] {
+    background: #C8DFF2 !important;
+    border: 1px solid #B5D2EB !important;
+}
+
+/* Text menu aktif */
+section[data-testid="stSidebarNav"] a[aria-current="page"] span {
+    color: #173B67 !important;
+    font-weight: 700 !important;
+}
+
+/* Sidebar heading */
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3 {
+    color: #173B67 !important;
+}
+
+/* Sidebar divider */
+section[data-testid="stSidebar"] hr {
+    border-color: #C9DDEE !important;
+}
+
+/* =========================================================
+   06. BUTTONS
+   ========================================================= */
+
+.stButton > button,
+.stDownloadButton > button {
+    border-radius: 12px;
+    border: 1px solid transparent;
+
+    background: var(--wk-blue);
+    color: white;
+
+    font-weight: 600;
+
+    transition: all 0.25s ease;
+}
+
+.stButton > button:hover,
+.stDownloadButton > button:hover {
+    background: var(--wk-blue-dark);
+    color: white;
+
+    border-color: var(--wk-blue-dark);
+
+    transform: translateY(-1px);
+    box-shadow: var(--wk-shadow-hover);
+}
+
+
+/* =========================================================
+   07. INPUTS
+   ========================================================= */
+
+.stTextInput input,
+.stTextArea textarea,
+.stNumberInput input {
+    border-radius: 12px !important;
+    border: 1px solid var(--wk-border) !important;
+
+    background: rgba(255, 255, 255, 0.90) !important;
+    color: var(--wk-text) !important;
+}
+
+/* Input focus */
+.stTextInput input:focus,
+.stTextArea textarea:focus,
+.stNumberInput input:focus {
+    border-color: var(--wk-blue) !important;
+
+    box-shadow:
+        0 0 0 2px rgba(52, 120, 184, 0.12) !important;
+}
+
+
+/* =========================================================
+   08. SELECTBOX & MULTISELECT
+   ========================================================= */
+
+.stSelectbox div[data-baseweb="select"] > div,
+.stMultiSelect div[data-baseweb="select"] > div {
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.92);
+}
+
+
+/* =========================================================
+   09. METRIC CARDS
+   ========================================================= */
+
+[data-testid="stMetric"] {
+    background: rgba(255, 255, 255, 0.88);
+
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+
+    border: 1px solid rgba(151, 190, 224, 0.30);
+
+    padding: 18px;
+    border-radius: var(--wk-radius);
+
+    box-shadow: var(--wk-shadow);
+}
+
+/* Metric label */
+[data-testid="stMetricLabel"] {
+    color: var(--wk-muted);
+}
+
+/* Metric value */
+[data-testid="stMetricValue"] {
+    color: var(--wk-navy);
+    font-weight: 700;
+}
+
+
+/* =========================================================
+   10. EXPANDER
+   ========================================================= */
+
+.streamlit-expanderHeader {
+    background: rgba(255, 255, 255, 0.85);
+    border-radius: 12px;
+    color: var(--wk-navy);
+}
+
+.streamlit-expanderContent {
+    background: rgba(255, 255, 255, 0.72);
+    border-radius: 0 0 12px 12px;
+}
+
+
+/* =========================================================
+   11. DATAFRAME
+   ========================================================= */
+
+[data-testid="stDataFrame"] {
+    background: rgba(255, 255, 255, 0.90);
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+
+/* =========================================================
+   12. ALERT
+   ========================================================= */
+
+[data-testid="stAlert"] {
+    border-radius: 14px;
+}
+
+
+/* =========================================================
+   13. DIVIDER
+   ========================================================= */
+
+hr {
+    border-color: rgba(151, 190, 224, 0.35);
+}
+
+
+/* =========================================================
+   14. SCROLLBAR
+   ========================================================= */
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #B5D2EB;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #82B5DE;
+}
+
+
+/* =========================================================
+   15. HIDE STREAMLIT ELEMENTS
+   ========================================================= */
+
+#MainMenu {
+    visibility: hidden;
+}
+
+footer {
+    visibility: hidden;
+}
+
+
+/* =========================================================
+   16. RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 768px) {
+
+    .main .block-container {
+        padding-left: 1rem;
+        padding-right: 1rem;
+        padding-top: 1rem;
+    }
+
+    [data-testid="stMetric"] {
+        padding: 12px;
+        border-radius: 14px;
+    }
+
+    section[data-testid="stSidebar"] {
+        border-right: none !important;
+    }
+
+}
+/* ===== SIDEBAR FORCE TEST ===== */
+
+[data-testid="stSidebar"] {
+    background: #EAF3FB !important;
+    border-right: 2px solid #B8D4ED !important;
+}
+
+[data-testid="stSidebar"] > div {
+    background: #EAF3FB !important;
+}
+
+[data-testid="stSidebarNav"] {
+    background: transparent !important;
+}
+
+[data-testid="stSidebarNav"] a {
+    background: transparent !important;
+    border-radius: 12px !important;
+    padding: 12px 14px !important;
+    margin: 5px 8px !important;
+}
+
+[data-testid="stSidebarNav"] a span {
+    color: #173B67 !important;
+    font-size: 14px !important;
+}
+
+[data-testid="stSidebarNav"] a:hover {
+    background: #D4E6F6 !important;
+}
+
+[data-testid="stSidebarNav"] a[aria-current="page"] {
+    background: #C5DDF2 !important;
+    border-radius: 12px !important;
+}
+
+[data-testid="stSidebarNav"] a[aria-current="page"] span {
+    color: #173B67 !important;
+    font-weight: 700 !important;
+}
+
+/* ===== END SIDEBAR FORCE TEST ===== */

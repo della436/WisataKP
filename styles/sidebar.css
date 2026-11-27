@@ -1,0 +1,94 @@
+/* ============================================================
+   WISATAKP - SIDEBAR (NAVY)
+   File: styles/sidebar.css
+   ============================================================ */
+
+/* Background sidebar + ilustrasi mercusuar di bagian bawah */
+[data-testid="stSidebar"] {
+    background:
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 210'><ellipse cx='170' cy='55' rx='30' ry='11' fill='%23FFFFFF' opacity='.12'/><ellipse cx='188' cy='47' rx='18' ry='10' fill='%23FFFFFF' opacity='.12'/><path d='M0 150 Q60 112 120 140 T240 126 V210 H0Z' fill='%232C5CA3' opacity='.8'/><path d='M0 178 Q70 148 130 172 T240 165 V210 H0Z' fill='%23244F92'/><polygon points='54,170 60,88 76,88 82,170' fill='%23F4F7FB'/><polygon points='58,88 78,88 68,72' fill='%233F78C4'/><rect x='60' y='78' width='16' height='9' fill='%23FFE08A'/><rect x='57' y='112' width='22' height='6' fill='%233F78C4' opacity='.7'/><rect x='55' y='138' width='25' height='6' fill='%233F78C4' opacity='.7'/></svg>") no-repeat bottom center / 100% auto,
+        linear-gradient(180deg, #1A3668 0%, #1F4A86 100%);
+    border-right: none;
+}
+
+[data-testid="stSidebar"] > div,
+[data-testid="stSidebarContent"] {
+    background: transparent !important;
+}
+
+/* Tombol collapse */
+[data-testid="stSidebar"] button svg {
+    color: #FFFFFF;
+    fill: #FFFFFF;
+}
+
+/* Brand (WisataKP) */
+[data-testid="stSidebarNav"] {
+    position: relative;
+    padding-top: 70px;
+}
+
+[data-testid="stSidebarNav"]::before {
+    content: "🍃  WisataKP";
+    position: absolute;
+    top: 6px;
+    left: 16px;
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: #FFFFFF;
+    letter-spacing: -0.3px;
+}
+
+[data-testid="stSidebarNav"]::after {
+    content: "Explore Kulon Progo";
+    position: absolute;
+    top: 42px;
+    left: 56px;
+    font-size: 0.8rem;
+    color: #BFD3EE;
+}
+
+/* Menu */
+[data-testid="stSidebarNav"] ul {
+    padding: 0.5rem 0.5rem;
+}
+
+[data-testid="stSidebarNav"] li {
+    margin-bottom: 0.5rem;
+}
+
+/* Sembunyikan menu pertama ("app") */
+[data-testid="stSidebarNav"] li:first-child {
+    display: none;
+}
+
+[data-testid="stSidebarNav"] a,
+[data-testid="stSidebarNavLink"] {
+    background: transparent;
+    border-radius: 14px;
+    padding: 0.8rem 1rem;
+    text-decoration: none;
+    transition: background 0.2s ease;
+}
+
+[data-testid="stSidebarNav"] a span,
+[data-testid="stSidebarNavLink"] span {
+    color: #FFFFFF;
+    font-weight: 500;
+}
+
+[data-testid="stSidebarNav"] a:hover,
+[data-testid="stSidebarNavLink"]:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Menu aktif */
+[data-testid="stSidebarNav"] a[aria-current="page"],
+[data-testid="stSidebarNavLink"][aria-current="page"] {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+[data-testid="stSidebarNav"] a[aria-current="page"] span,
+[data-testid="stSidebarNavLink"][aria-current="page"] span {
+    font-weight: 700;
+}

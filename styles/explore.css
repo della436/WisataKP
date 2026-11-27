@@ -1,0 +1,245 @@
+/* =========================================================
+   WISATAKP - EXPLORE & DESTINATION DETAIL
+   File: styles/explore.css
+   Catatan: style sentimen, insight, tab, dan kartu review
+   ada di styles/sentiment.css
+   ========================================================= */
+
+/* GOOGLE FONTS */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+
+/* =========================================================
+   MAIN TITLE
+   ========================================================= */
+
+.explore-hero {
+    padding: 35px 10px 32px;
+    margin-bottom: 20px;
+}
+
+.explore-hero .hero-eyebrow {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #68839E;
+    margin-bottom: 14px;
+}
+
+.explore-hero h1 {
+    font-family: 'Cormorant Garamond', serif !important;
+    font-size: clamp(3rem, 6vw, 5.3rem) !important;
+    font-weight: 600 !important;
+    line-height: 0.95 !important;
+    letter-spacing: -1.5px;
+    color: #173650 !important;
+    margin: 0;
+}
+
+.explore-hero p {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.95rem;
+    line-height: 1.8;
+    color: #526B82;
+    max-width: 620px;
+    margin-top: 20px;
+}
+
+
+/* =========================================================
+   SECTION HEADINGS
+   ========================================================= */
+
+.stApp h2,
+.stApp h3 {
+    font-family: 'Inter', sans-serif !important;
+    color: #193B58 !important;
+    font-weight: 600 !important;
+    letter-spacing: -0.4px;
+}
+
+.stApp h2 {
+    font-size: 1.5rem !important;
+}
+
+.stApp h3 {
+    font-size: 1.18rem !important;
+}
+
+
+/* DESTINATION TITLE */
+
+.destination-title {
+    font-family: 'Cormorant Garamond', serif !important;
+    font-size: clamp(2.8rem, 5vw, 4.5rem) !important;
+    font-weight: 600 !important;
+    color: #183653 !important;
+    line-height: 1.05 !important;
+    margin-top: 1rem !important;
+    margin-bottom: 0.5rem !important;
+}
+
+
+/* =========================================================
+   BODY TEXT
+   ========================================================= */
+
+.stApp p {
+    color: #526B82;
+    line-height: 1.75;
+}
+
+/* Override warna teks khusus tombol */
+.stApp div[data-testid="stButton"] button p {
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
+}
+
+
+/* =========================================================
+   INPUTS
+   ========================================================= */
+
+[data-testid="stTextInput"] input,
+[data-testid="stTextArea"] textarea,
+[data-testid="stSelectbox"] div[data-baseweb="select"] {
+    border-radius: 12px !important;
+    border: 1px solid #D6E1EA !important;
+    background-color: rgba(255, 255, 255, 0.92) !important;
+    transition: all 0.2s ease;
+}
+
+[data-testid="stTextInput"] input:focus,
+[data-testid="stTextArea"] textarea:focus {
+    border-color: #7898B7 !important;
+    box-shadow: 0 0 0 2px rgba(120, 152, 183, 0.15) !important;
+}
+
+
+/* =========================================================
+   BUTTON (PRIMARY)
+   ========================================================= */
+
+button[data-testid="stBaseButton-primary"],
+.stApp div[data-testid="stButton"] button[kind="primary"] {
+    background: #183653 !important;
+    background-color: #183653 !important;
+    border: 1px solid #183653 !important;
+}
+
+button[data-testid="stBaseButton-primary"] p,
+button[data-testid="stBaseButton-primary"] span,
+button[data-testid="stBaseButton-primary"] div,
+.stApp div[data-testid="stButton"] button[kind="primary"] p {
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
+}
+
+button[data-testid="stBaseButton-primary"]:hover {
+    background-color: #102A43 !important;
+    border-color: #102A43 !important;
+}
+
+button[data-testid="stBaseButton-primary"]:hover p,
+button[data-testid="stBaseButton-primary"]:hover span,
+button[data-testid="stBaseButton-primary"]:hover div {
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
+}
+
+
+/* =========================================================
+   DIVIDERS
+   ========================================================= */
+
+[data-testid="stDivider"] hr {
+    border-color: rgba(120, 145, 165, 0.22) !important;
+}
+
+
+/* =========================================================
+   METRIC CARDS (Rating Destinasi)
+   ========================================================= */
+
+[data-testid="stMetric"] {
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid rgba(213, 225, 235, 0.9);
+    border-radius: 16px;
+    padding: 18px 20px;
+    box-shadow: 0 4px 16px rgba(36, 70, 101, 0.035);
+    transition: all 0.25s ease;
+}
+
+[data-testid="stMetric"]:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 7px 20px rgba(36, 70, 101, 0.07);
+}
+
+[data-testid="stMetricLabel"] {
+    color: #6A8197 !important;
+    font-size: 0.82rem !important;
+}
+
+[data-testid="stMetricValue"] {
+    color: #193B58 !important;
+    font-weight: 650 !important;
+}
+
+
+/* =========================================================
+   ALERT / INFO BOX
+   ========================================================= */
+
+[data-testid="stAlert"] {
+    border-radius: 14px !important;
+    border: 1px solid #D8E3ED !important;
+}
+
+
+/* =========================================================
+   MAP
+   ========================================================= */
+
+[data-testid="stIFrame"],
+iframe {
+    border-radius: 16px !important;
+    overflow: hidden;
+}
+
+
+/* =========================================================
+   FORMS
+   ========================================================= */
+
+[data-testid="stForm"] {
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid #DFE8EF;
+    border-radius: 16px;
+    padding: 22px;
+}
+
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 768px) {
+
+    .explore-hero {
+        padding: 22px 4px;
+    }
+
+    .explore-hero h1 {
+        font-size: 3rem !important;
+    }
+
+    .destination-title {
+        font-size: 2.6rem !important;
+    }
+
+    [data-testid="stMetric"] {
+        padding: 14px;
+    }
+}

@@ -1,0 +1,1021 @@
+/* ============================================================
+   WISATAKP - WISBOT
+   File: styles/wisbot.css
+   Isi:
+   1. Variabel & layout
+   2. Header
+   3. Welcome (hero, kartu menu, coba tanyakan)
+   4. Bubble chat
+   5. Foto, rank, chip kategori
+   6. Panel populer
+   7. Panel review positif
+   8. Itinerary & kartu rekomendasi
+   9. Typing indicator
+  10. Saran & pilihan kategori
+  11. Chat input, footer, responsive
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+
+/* ============================================================
+   1. VARIABEL & LAYOUT
+   ============================================================ */
+
+:root {
+    --wb-navy: #1B3A6B;
+    --wb-text: #4A6580;
+    --wb-muted: #6B7C8E;
+    --wb-blue-50: #F1F6FC;
+    --wb-blue-100: #E3EEFC;
+    --wb-border: #E1E9F1;
+}
+
+[data-testid="stMainBlockContainer"] {
+    max-width: 1120px;
+    padding-top: 1.5rem;
+    padding-bottom: 7rem;
+}
+
+.wb-header,
+.wb-hero,
+.wb-panel,
+.wb-cards,
+.wb-typing,
+.wb-card,
+.wb-qp-title,
+.wb-qp-desc,
+.wb-toolbar-title,
+.wb-footer {
+    font-family: "Inter", "Segoe UI", sans-serif;
+}
+
+
+/* ============================================================
+   2. HEADER
+   ============================================================ */
+
+.wb-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 26px;
+    margin-bottom: 18px;
+    background: rgba(255, 255, 255, 0.93);
+    border-radius: 24px;
+    box-shadow: 0 6px 22px rgba(27, 58, 107, 0.1);
+}
+
+.wb-header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.wb-logo {
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    background: var(--wb-blue-100);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+}
+
+.wb-header-title {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--wb-navy);
+    line-height: 1.25;
+}
+
+.wb-header-sub {
+    font-size: 0.95rem;
+    color: var(--wb-text);
+}
+
+.wb-online {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: #E4F3E9;
+    color: #2F8A55;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+.wb-online-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #2F8A55;
+}
+
+
+/* ============================================================
+   3. WELCOME
+   ============================================================ */
+
+.wb-hero {
+    max-width: 640px;
+    padding: 26px 32px;
+    margin-bottom: 20px;
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(6px);
+    border-radius: 28px;
+    box-shadow: 0 6px 22px rgba(27, 58, 107, 0.08);
+}
+
+.wb-hero-title {
+    font-size: clamp(2.2rem, 5vw, 3.3rem);
+    font-weight: 800;
+    line-height: 1.12;
+    letter-spacing: -1px;
+    color: var(--wb-navy);
+}
+
+.wb-hl {
+    padding: 0 10px;
+    border-radius: 12px;
+    background: #D6E6FB;
+    color: #2F62C9;
+}
+
+.wb-hero-sub {
+    margin-top: 14px;
+    font-size: 1rem;
+    line-height: 1.7;
+    color: #33506E;
+}
+
+/* Kartu menu */
+div[class*="st-key-wb_qp_card_"] {
+    padding: 18px 18px 14px;
+    background: #FFFFFF;
+    border-radius: 22px;
+    box-shadow: 0 6px 20px rgba(27, 58, 107, 0.1);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    gap: 0.4rem;
+}
+
+div[class*="st-key-wb_qp_card_"]:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 28px rgba(27, 58, 107, 0.16);
+}
+
+.wb-qp-icon {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    background: var(--wb-blue-100);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.45rem;
+    margin-bottom: 10px;
+}
+
+.wb-qp-title {
+    font-size: 1.05rem;
+    font-weight: 800;
+    line-height: 1.3;
+    color: var(--wb-navy);
+    min-height: 2.7rem;
+}
+
+.wb-qp-desc {
+    font-size: 0.86rem;
+    line-height: 1.5;
+    color: var(--wb-text);
+    min-height: 2.6rem;
+}
+
+.wb-qp-art {
+    font-size: 2.6rem;
+    line-height: 1;
+    opacity: 0.9;
+}
+
+div[class*="st-key-wb_qp_card_"] [data-testid="stHorizontalBlock"] {
+    align-items: flex-end;
+}
+
+div[class*="st-key-wb_qp_card_"] [data-testid="stColumn"]:last-child [data-testid="stElementContainer"] {
+    display: flex;
+    justify-content: flex-end;
+}
+
+div[class*="st-key-wb_qp_card_"] button {
+    width: 38px;
+    min-width: 38px;
+    height: 38px;
+    min-height: 38px;
+    padding: 0;
+    border-radius: 50% !important;
+    background: var(--wb-navy) !important;
+    border: none !important;
+}
+
+div[class*="st-key-wb_qp_card_"] button p {
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
+    font-size: 1rem;
+}
+
+div[class*="st-key-wb_qp_card_"] button:hover {
+    background: #2F62C9 !important;
+}
+
+/* Panel "Coba tanyakan" */
+div[class*="st-key-wb_try"]:not([class*="st-key-wb_try_"]) {
+    margin-top: 16px;
+    padding: 16px 20px 18px;
+    background: rgba(241, 247, 253, 0.92);
+    border-radius: 22px;
+    gap: 0.6rem;
+}
+
+.wb-try-title {
+    font-family: "Inter", "Segoe UI", sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--wb-navy);
+}
+
+div[class*="st-key-wb_try_"] button {
+    background: #FFFFFF !important;
+    border: none !important;
+    border-radius: 999px !important;
+    box-shadow: 0 3px 10px rgba(27, 58, 107, 0.1);
+    min-height: 2.5rem;
+}
+
+div[class*="st-key-wb_try_"] button p {
+    color: #33506E !important;
+    -webkit-text-fill-color: #33506E !important;
+    font-size: 0.88rem;
+    font-weight: 500;
+}
+
+div[class*="st-key-wb_try_"] button:hover {
+    background: var(--wb-navy) !important;
+}
+
+div[class*="st-key-wb_try_"] button:hover p {
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
+}
+
+
+/* ============================================================
+   4. BUBBLE CHAT
+   ============================================================ */
+
+[data-testid="stChatMessage"] {
+    background: transparent !important;
+    padding: 0.45rem 0;
+    gap: 0.75rem;
+    align-items: flex-start;
+}
+
+[data-testid="stChatMessageContent"] {
+    max-width: 94%;
+    padding: 14px 20px;
+    background: #FFFFFF;
+    border: 1px solid #E3ECF6;
+    border-radius: 20px 20px 20px 6px;
+    box-shadow: 0 3px 12px rgba(27, 58, 107, 0.06);
+    font-size: 0.97rem;
+    line-height: 1.75;
+}
+
+[data-testid="stChatMessageContent"] p,
+[data-testid="stChatMessageContent"] li {
+    color: var(--wb-text);
+    line-height: 1.75;
+}
+
+[data-testid="stChatMessageContent"] h2 {
+    font-size: 1.2rem !important;
+    color: var(--wb-navy) !important;
+    margin: 0.2rem 0 0.6rem;
+}
+
+[data-testid="stChatMessageContent"] h3 {
+    font-size: 1.02rem !important;
+    color: var(--wb-navy) !important;
+    margin: 0.4rem 0 0.2rem;
+}
+
+[data-testid="stChatMessageContent"] strong {
+    color: var(--wb-navy);
+}
+
+/* Bubble yang berisi panel: tanpa bubble */
+[data-testid="stChatMessageContent"]:has(.wb-panel) {
+    max-width: 100%;
+    width: 100%;
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+/* Avatar robot */
+[data-testid="stChatMessageAvatarAssistant"],
+[data-testid="stChatMessageAvatarCustom"] {
+    width: 44px;
+    height: 44px;
+    background: var(--wb-blue-100) !important;
+    color: var(--wb-navy) !important;
+    border-radius: 50%;
+    font-size: 1.4rem;
+}
+
+/* Bubble pengguna (kanan, navy) */
+[data-testid="stChatMessage"]:is(
+    [aria-label*="user" i],
+    :has([data-testid="stChatMessageAvatarUser"])
+) {
+    flex-direction: row-reverse;
+}
+
+[data-testid="stChatMessage"]:is(
+    [aria-label*="user" i],
+    :has([data-testid="stChatMessageAvatarUser"])
+) [data-testid="stChatMessageContent"] {
+    max-width: 78%;
+    margin-left: auto;
+    background: var(--wb-navy);
+    border: none;
+    border-radius: 20px 20px 6px 20px;
+}
+
+[data-testid="stChatMessage"]:is(
+    [aria-label*="user" i],
+    :has([data-testid="stChatMessageAvatarUser"])
+) [data-testid="stChatMessageContent"] p {
+    color: #FFFFFF !important;
+}
+
+[data-testid="stChatMessageAvatarUser"] {
+    display: none;
+}
+
+
+/* ============================================================
+   5. FOTO, RANK, CHIP KATEGORI
+   ============================================================ */
+
+.wb-photo {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+}
+
+.wb-photo-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.4rem;
+    background: linear-gradient(135deg, #CFE0F5 0%, #E9F1FB 55%, #F7E9D7 100%);
+}
+
+.wb-rank {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #FFFFFF;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+
+.wb-rank-gold   { background: #E8B43A; }
+.wb-rank-silver { background: #A9B4C2; }
+.wb-rank-bronze { background: #C98A55; }
+.wb-rank-plain  { background: #E3EEFC; color: var(--wb-navy); box-shadow: none; }
+
+.wb-chip {
+    display: inline-block;
+    align-self: flex-start;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.wb-cat-pantai    { background: #E4EEFF; color: #2F62C9; }
+.wb-cat-alam      { background: #E5F5E8; color: #2E7D4F; }
+.wb-cat-air       { background: #DDF3F6; color: #1E7A8C; }
+.wb-cat-desa      { background: #FFF0DD; color: #B5651D; }
+.wb-cat-kuliner   { background: #FFE9E0; color: #C2542D; }
+.wb-cat-taman     { background: #F9E6F1; color: #B04B84; }
+.wb-cat-panorama  { background: #ECE7FB; color: #6A4CC0; }
+.wb-cat-lain      { background: #EEF2F6; color: #5B6B7C; }
+
+
+/* ============================================================
+   6. PANEL (UMUM) & POPULER
+   ============================================================ */
+
+.wb-panel {
+    width: 100%;
+    background: #FFFFFF;
+    border: 1px solid var(--wb-border);
+    border-radius: 26px;
+    overflow: hidden;
+    box-shadow: 0 8px 26px rgba(27, 58, 107, 0.1);
+}
+
+.wb-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 26px 16px;
+    background: linear-gradient(135deg, #E6F0FC 0%, #F5F9FE 100%);
+}
+
+.wb-panel-title {
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: var(--wb-navy);
+}
+
+.wb-panel-sub {
+    margin-top: 4px;
+    font-size: 0.9rem;
+    color: var(--wb-text);
+}
+
+.wb-panel-deco {
+    font-size: 2rem;
+    letter-spacing: 6px;
+}
+
+/* Grid kartu populer */
+.wb-pop-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px;
+    padding: 18px 20px 22px;
+}
+
+.wb-pop-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 10px 14px;
+    background: #FFFFFF;
+    border: 1px solid var(--wb-border);
+    border-radius: 18px;
+    box-shadow: 0 4px 14px rgba(27, 58, 107, 0.07);
+}
+
+.wb-pop-media {
+    position: relative;
+    height: 112px;
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.wb-pop-media .wb-rank {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+}
+
+.wb-pop-name {
+    min-height: 2.7rem;
+    padding: 0 4px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--wb-navy);
+}
+
+.wb-pop-meta {
+    padding: 0 4px;
+    font-size: 0.85rem;
+    color: var(--wb-text);
+}
+
+.wb-pop-card .wb-chip {
+    margin: 4px 4px 0;
+}
+
+
+/* ============================================================
+   7. PANEL REVIEW POSITIF
+   ============================================================ */
+
+.wb-pos-list {
+    padding: 4px 22px 14px;
+}
+
+.wb-pos-row {
+    display: grid;
+    grid-template-columns: 34px 104px minmax(0, 1.5fr) minmax(0, 1fr) minmax(90px, 1.2fr) 100px;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid #EDF1F6;
+}
+
+.wb-pos-row:last-child {
+    border-bottom: none;
+}
+
+.wb-pos-photo {
+    width: 104px;
+    height: 62px;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.wb-pos-photo .wb-photo-fallback {
+    font-size: 1.6rem;
+}
+
+.wb-pos-name {
+    font-size: 0.97rem;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--wb-navy);
+}
+
+.wb-pos-meta {
+    margin-top: 3px;
+    font-size: 0.84rem;
+    color: var(--wb-text);
+}
+
+.wb-pos-counts {
+    font-size: 0.85rem;
+    line-height: 1.7;
+    color: var(--wb-text);
+    border-left: 1px solid #EDF1F6;
+    padding-left: 16px;
+}
+
+.wb-pos-counts b {
+    color: var(--wb-navy);
+}
+
+.wb-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    margin-right: 7px;
+    border-radius: 50%;
+}
+
+.wb-dot-pos { background: #4FB35E; }
+.wb-dot-neu { background: #F2B63C; }
+.wb-dot-neg { background: #E5534B; }
+
+.wb-bar {
+    display: flex;
+    width: 100%;
+    height: 8px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: #EDF1F6;
+}
+
+.wb-bar-pos { background: #4FB35E; }
+.wb-bar-neu { background: #F2B63C; }
+.wb-bar-neg { background: #E5534B; }
+
+.wb-pct {
+    padding: 8px 6px;
+    text-align: center;
+    border-radius: 14px;
+    background: #E9F6EC;
+    line-height: 1.3;
+}
+
+.wb-pct b {
+    display: block;
+    font-size: 1.1rem;
+    color: #2F8A55;
+}
+
+.wb-pct span {
+    font-size: 0.72rem;
+    color: #4C8A66;
+}
+
+
+/* ============================================================
+   8. ITINERARY & KARTU REKOMENDASI
+   ============================================================ */
+
+.wb-trip-list {
+    padding: 8px 22px 6px;
+}
+
+.wb-trip-row {
+    display: grid;
+    grid-template-columns: 86px 112px minmax(0, 1fr);
+    align-items: center;
+    gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid #EDF1F6;
+}
+
+.wb-trip-time {
+    text-align: center;
+    font-size: 1.5rem;
+    line-height: 1.3;
+}
+
+.wb-trip-time b {
+    display: block;
+    font-size: 0.95rem;
+    color: var(--wb-navy);
+}
+
+.wb-trip-time span {
+    font-size: 0.8rem;
+    color: var(--wb-muted);
+}
+
+.wb-trip-photo {
+    width: 112px;
+    height: 70px;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.wb-trip-photo .wb-photo-fallback {
+    font-size: 1.8rem;
+}
+
+.wb-trip-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.wb-trip-note {
+    padding: 12px 26px 18px;
+    font-size: 0.82rem;
+    color: var(--wb-muted);
+}
+
+.wb-link {
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--wb-navy) !important;
+    text-decoration: none !important;
+}
+
+.wb-link:hover {
+    text-decoration: underline !important;
+}
+
+/* Kartu rekomendasi kategori */
+.wb-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 14px;
+    margin-top: 12px;
+}
+
+.wb-card {
+    display: flex;
+    flex-direction: column;
+    background: #FFFFFF;
+    border: 1px solid var(--wb-border);
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: 0 3px 12px rgba(27, 58, 107, 0.06);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.wb-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 24px rgba(27, 58, 107, 0.12);
+}
+
+.wb-card-cover {
+    position: relative;
+    height: 108px;
+}
+
+.wb-card-cover .wb-rank {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+}
+
+.wb-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px 16px 16px;
+    flex: 1;
+}
+
+.wb-card-name {
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.35;
+    color: #1F2933;
+}
+
+.wb-card-loc {
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--wb-muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.wb-card-rating {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #B8862B;
+}
+
+.wb-card-reason {
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: var(--wb-blue-50);
+    color: #3A5A80;
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+.wb-card .wb-link {
+    margin-top: auto;
+    padding-top: 6px;
+}
+
+
+/* ============================================================
+   9. TYPING INDICATOR
+   ============================================================ */
+
+.wb-typing {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 6px 0 14px;
+}
+
+.wb-typing-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--wb-blue-100);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+}
+
+.wb-typing-bubble {
+    padding: 12px 18px;
+    background: #FFFFFF;
+    border: 1px solid var(--wb-border);
+    border-radius: 20px 20px 20px 6px;
+}
+
+.wb-typing-text {
+    font-size: 0.9rem;
+    color: var(--wb-text);
+}
+
+.wb-dots {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.wb-dots span {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #3A5A80;
+    animation: wb-bounce 1.2s infinite ease-in-out;
+}
+
+.wb-dots span:nth-child(2) { animation-delay: 0.15s; }
+.wb-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes wb-bounce {
+    0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
+    40%           { opacity: 1;   transform: translateY(-4px); }
+}
+
+
+/* ============================================================
+   10. SARAN & PILIHAN KATEGORI
+   ============================================================ */
+
+div[class*="st-key-wb_suggest"],
+div[class*="st-key-wb_picker"] {
+    margin-top: 10px;
+    padding: 18px 20px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid var(--wb-border);
+    border-radius: 20px;
+    box-shadow: 0 4px 16px rgba(27, 58, 107, 0.08);
+    gap: 0.5rem;
+}
+
+.wb-suggest-title {
+    font-family: "Inter", "Segoe UI", sans-serif;
+    font-size: 0.88rem;
+    color: var(--wb-text);
+}
+
+.wb-picker-title {
+    font-family: "Inter", "Segoe UI", sans-serif;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--wb-navy);
+}
+
+.wb-picker-sub {
+    font-family: "Inter", "Segoe UI", sans-serif;
+    font-size: 0.88rem;
+    color: var(--wb-muted);
+    margin-bottom: 4px;
+}
+
+div[class*="st-key-wb_sg_"] button,
+div[class*="st-key-wb_cat_"] button,
+.st-key-wb_clear button {
+    background: var(--wb-blue-50) !important;
+    border: 1px solid transparent !important;
+    border-radius: 14px !important;
+    min-height: 2.6rem;
+    transition: all 0.2s ease;
+}
+
+div[class*="st-key-wb_sg_"] button {
+    justify-content: flex-start;
+}
+
+div[class*="st-key-wb_sg_"] button p,
+div[class*="st-key-wb_cat_"] button p,
+.st-key-wb_clear button p {
+    color: var(--wb-navy) !important;
+    -webkit-text-fill-color: var(--wb-navy) !important;
+    font-size: 0.92rem;
+    font-weight: 500;
+}
+
+div[class*="st-key-wb_sg_"] button:hover,
+div[class*="st-key-wb_cat_"] button:hover,
+.st-key-wb_clear button:hover {
+    background: var(--wb-navy) !important;
+}
+
+div[class*="st-key-wb_sg_"] button:hover p,
+div[class*="st-key-wb_cat_"] button:hover p,
+.st-key-wb_clear button:hover p {
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
+}
+
+.wb-toolbar-title {
+    display: inline-block;
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--wb-navy);
+}
+
+
+/* ============================================================
+   11. CHAT INPUT, FOOTER, RESPONSIVE
+   ============================================================ */
+
+[data-testid="stBottom"] > div {
+    background: transparent !important;
+}
+
+[data-testid="stChatInput"] {
+    background: #FFFFFF !important;
+    border: 1px solid #D3DFEC !important;
+    border-radius: 999px !important;
+    box-shadow: 0 8px 26px rgba(27, 58, 107, 0.14);
+}
+
+[data-testid="stChatInput"] textarea {
+    font-size: 0.97rem;
+    color: #1F2933;
+}
+
+[data-testid="stChatInput"] textarea::placeholder {
+    color: #8A9BAD;
+}
+
+[data-testid="stChatInput"] button {
+    background: var(--wb-navy) !important;
+    border-radius: 999px !important;
+}
+
+[data-testid="stChatInput"] button svg {
+    fill: #FFFFFF !important;
+    color: #FFFFFF !important;
+}
+
+[data-testid="stChatInput"] button:disabled {
+    opacity: 0.35;
+}
+
+.wb-footer {
+    width: fit-content;
+    margin: 26px auto 0;
+    padding: 6px 16px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.85);
+    font-size: 0.8rem;
+    color: var(--wb-muted);
+}
+
+@media (max-width: 900px) {
+
+    .wb-pos-row {
+        grid-template-columns: 34px 84px minmax(0, 1fr);
+    }
+
+    .wb-pos-photo {
+        width: 84px;
+        height: 56px;
+    }
+
+    .wb-pos-counts {
+        grid-column: 2 / 4;
+        border-left: none;
+        padding-left: 0;
+    }
+
+    .wb-bar,
+    .wb-pct {
+        grid-column: 2 / 4;
+    }
+
+    .wb-trip-row {
+        grid-template-columns: 70px minmax(0, 1fr);
+    }
+
+    .wb-trip-photo {
+        display: none;
+    }
+}
+
+@media (max-width: 768px) {
+
+    [data-testid="stMainBlockContainer"] {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+    .wb-header {
+        padding: 12px 16px;
+    }
+
+    .wb-header-sub {
+        display: none;
+    }
+
+    .wb-hero {
+        padding: 20px;
+    }
+
+    .wb-panel-head {
+        padding: 16px 18px;
+    }
+
+    .wb-panel-deco {
+        display: none;
+    }
+
+    [data-testid="stChatMessageContent"]:not(:has(.wb-panel)),
+    [data-testid="stChatMessage"]:is(
+        [aria-label*="user" i],
+        :has([data-testid="stChatMessageAvatarUser"])
+    ) [data-testid="stChatMessageContent"] {
+        max-width: 96%;
+        padding: 12px 16px;
+    }
+}
