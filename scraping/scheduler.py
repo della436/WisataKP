@@ -10,6 +10,7 @@
 # 6. Menyimpan event yang sudah pernah ditemukan.
 # 7. Menyiapkan notifikasi event baru ke Telegram.
 # 8. Menyediakan mode pengujian scheduler.
+# 9. Mengirim pengingat event H-1 ke semua pengguna bot.
 # =========================================================
 
 
@@ -25,7 +26,15 @@ import logging
 import os
 import sys
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+try:  # python-telegram-bot >= 21
+    from telegram import LinkPreviewOptions
+
+    NO_PREVIEW = {"link_preview_options": LinkPreviewOptions(is_disabled=True)}
+except ImportError:  # python-telegram-bot 20.x / belum terpasang
+    NO_PREVIEW = {"disable_web_page_preview": True}
 
 
 # =========================================================
@@ -50,8 +59,12 @@ SCRAPING_INTERVAL_HOURS = 6
 # Mengubah jam menjadi detik.
 SCRAPING_INTERVAL_SECONDS = SCRAPING_INTERVAL_HOURS * 3600
 
-# Chat ID Telegram.
+# Chat ID Telegram (opsional: admin/channel yang selalu ikut menerima pengingat).
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# Zona waktu WIB dan jam paling awal pengingat H-1 boleh dikirim.
+WIB = timezone(timedelta(hours=7))
+REMINDER_HOUR_WIB = 8
 
 
 # =========================================================
@@ -73,6 +86,12 @@ EVENT_DIR = PROJECT_DIR / "data" / "events"
 
 # File penyimpanan event yang pernah ditemukan.
 SEEN_EVENTS_FILE = EVENT_DIR / "seen_events.json"
+
+# Pengguna bot yang menerima pengingat (diisi bot.py saat /start).
+SUBSCRIBERS_FILE = EVENT_DIR / "subscribers.json"
+
+# Event yang pengingat H-1-nya sudah terkirim (mencegah kirim ganda).
+REMINDED_EVENTS_FILE = EVENT_DIR / "reminded_events.json"
 
 
 # =========================================================
@@ -399,6 +418,312 @@ async def send_notification(application, events):
 
 
 # =========================================================
+# PENYIMPANAN DAFTAR PENERIMA DAN EVENT YANG SUDAH DIINGATKAN
+# =========================================================
+
+def _read_list(path):
+    """Membaca file JSON berisi list; list kosong bila belum ada/rusak."""
+
+    if not path.exists():
+        return []
+
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            data = json.load(file)
+        return data if isinstance(data, list) else []
+
+    except (json.JSONDecodeError, OSError) as error:
+        logger.error("Gagal membaca %s: %s", path.name, error)
+        return []
+
+
+def _write_list(path, items):
+    """Menulis list ke JSON (lewat file sementara agar tidak setengah tertulis)."""
+
+    create_scheduler_directories()
+    temp_path = path.with_name(path.name + ".tmp")
+
+    try:
+        with open(temp_path, "w", encoding="utf-8") as file:
+            json.dump(items, file, indent=4, ensure_ascii=False)
+
+        temp_path.replace(path)
+        return True
+
+    except OSError as error:
+        logger.error("Gagal menyimpan %s: %s", path.name, error)
+        return False
+
+
+def load_subscribers():
+    """Chat ID pengguna yang menerima pengingat."""
+
+    return {
+        chat_id
+        for chat_id in _read_list(SUBSCRIBERS_FILE)
+        if isinstance(chat_id, int)
+    }
+
+
+def add_subscriber(chat_id):
+    """Dipanggil bot.py saat pengguna menekan /start."""
+
+    subscribers = load_subscribers()
+
+    if chat_id not in subscribers:
+        subscribers.add(chat_id)
+        _write_list(SUBSCRIBERS_FILE, sorted(subscribers))
+        logger.info("Penerima pengingat bertambah: %s", chat_id)
+
+
+def remove_subscriber(chat_id):
+    """Dipanggil bot.py saat /berhenti, atau saat bot diblokir pengguna."""
+
+    subscribers = load_subscribers()
+
+    if chat_id in subscribers:
+        subscribers.discard(chat_id)
+        _write_list(SUBSCRIBERS_FILE, sorted(subscribers))
+        logger.info("Penerima pengingat dihapus: %s", chat_id)
+
+
+def get_notification_chat_ids():
+    """Seluruh penerima: pengguna bot + TELEGRAM_CHAT_ID (jika diatur)."""
+
+    chat_ids = list(load_subscribers())
+
+    if TELEGRAM_CHAT_ID:
+        try:
+            extra = int(TELEGRAM_CHAT_ID)
+        except ValueError:
+            extra = TELEGRAM_CHAT_ID  # mis. @namachannel
+
+        if extra not in chat_ids:
+            chat_ids.append(extra)
+
+    return chat_ids
+
+
+# =========================================================
+# PENGINGAT EVENT H-1
+# =========================================================
+
+async def broadcast(application, chat_ids, text):
+    """
+    Mengirim satu pesan ke banyak chat.
+
+    Return:
+        int : jumlah chat yang berhasil menerima pesan.
+    """
+
+    from telegram.error import Forbidden, RetryAfter
+
+    sent = 0
+
+    for chat_id in chat_ids:
+
+        for attempt in (1, 2):
+
+            try:
+                await application.bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode="HTML",
+                    **NO_PREVIEW
+                )
+                sent += 1
+                break
+
+            except Forbidden:
+                # Pengguna memblokir bot: hapus dari daftar penerima.
+                remove_subscriber(chat_id)
+                break
+
+            except RetryAfter as error:
+                # Kena batas kirim Telegram: tunggu lalu coba sekali lagi.
+                if attempt == 2:
+                    break
+                await asyncio.sleep(error.retry_after + 1)
+
+            except Exception as error:
+                logger.warning(
+                    "Gagal mengirim pengingat ke %s: %s",
+                    chat_id,
+                    error
+                )
+                break
+
+        # Telegram membatasi sekitar 30 pesan per detik.
+        await asyncio.sleep(0.05)
+
+    return sent
+
+
+async def run_reminder_check(
+    application,
+    reminder_callback,
+    now=None
+):
+    """
+    Mengirim pengingat untuk event yang berlangsung besok (H-1).
+
+    reminder_callback dari bot.py mengembalikan
+    [(id_event, pesan_html), ...] untuk event yang dimulai besok.
+
+    Aturan:
+        - Dikirim paling cepat jam REMINDER_HOUR_WIB WIB.
+        - Setiap event hanya diingatkan sekali (reminded_events.json).
+        - Event ditandai terkirim hanya jika minimal satu pesan berhasil.
+    """
+
+    if application is None or reminder_callback is None:
+        return
+
+    now = now or datetime.now(WIB)
+
+    if now.hour < REMINDER_HOUR_WIB:
+        logger.info(
+            "Belum jam %02d:00 WIB, pengingat H-1 ditunda.",
+            REMINDER_HOUR_WIB
+        )
+        return
+
+    try:
+
+        reminders = reminder_callback()
+
+        reminded = set(_read_list(REMINDED_EVENTS_FILE))
+
+        pending = [
+            (event_id, text)
+            for event_id, text in reminders
+            if event_id not in reminded
+        ]
+
+        if not pending:
+            logger.info("Tidak ada pengingat H-1 yang perlu dikirim.")
+            return
+
+        chat_ids = get_notification_chat_ids()
+
+        if not chat_ids:
+            logger.info(
+                "Ada %s pengingat H-1 tetapi belum ada penerima.",
+                len(pending)
+            )
+            return
+
+        for event_id, text in pending:
+
+            sent = await broadcast(application, chat_ids, text)
+
+            if sent:
+                reminded.add(event_id)
+
+            logger.info(
+                "Pengingat H-1 terkirim ke %s dari %s penerima: %s",
+                sent,
+                len(chat_ids),
+                event_id
+            )
+
+        _write_list(REMINDED_EVENTS_FILE, sorted(reminded))
+
+    except Exception as error:
+
+        # Error pengingat tidak boleh menghentikan scheduler.
+        logger.exception(
+            "Terjadi kesalahan saat mengirim pengingat H-1: %s",
+            error
+        )
+
+
+# =========================================================
+# FILTERING & VALIDASI EVENT (menghasilkan event_valid.csv)
+# =========================================================
+
+# Folder tempat filtering_event.py dan validation_event.py dicari.
+PIPELINE_DIRS = [
+    BASE_DIR,
+    PROJECT_DIR / "scraping",
+    PROJECT_DIR / "validation",
+    PROJECT_DIR / "filtering",
+    PROJECT_DIR,
+]
+
+
+def load_pipeline_module(name):
+    """
+    Memuat script pipeline berdasarkan nama file (tanpa .py),
+    di folder mana pun ia berada pada PIPELINE_DIRS.
+    """
+
+    import importlib.util
+
+    for folder in PIPELINE_DIRS:
+
+        path = folder / f"{name}.py"
+
+        if path.is_file():
+
+            spec = importlib.util.spec_from_file_location(
+                name,
+                path
+            )
+
+            module = importlib.util.module_from_spec(spec)
+
+            spec.loader.exec_module(module)
+
+            return module
+
+    raise FileNotFoundError(
+        f"{name}.py tidak ditemukan di: "
+        + ", ".join(str(folder) for folder in PIPELINE_DIRS)
+    )
+
+
+def run_event_pipeline():
+    """
+    Menjalankan filtering + ekstraksi, lalu validasi:
+
+        event_wisata.csv -> event_candidates.csv -> event_valid.csv
+
+    event_valid.csv adalah file yang dibaca bot. Tanpa langkah ini,
+    event baru hasil scraping tidak punya tanggal dan lokasi sehingga
+    tidak tampil di bot dan tidak mendapat pengingat H-1.
+
+    Error di sini tidak menghentikan pemeriksaan scraping.
+    """
+
+    # Script pipeline memakai path relatif dari root project.
+    os.chdir(PROJECT_DIR)
+
+    for name in ("filtering_event", "validation_event"):
+
+        try:
+
+            logger.info("Menjalankan %s...", name)
+
+            load_pipeline_module(name).main()
+
+        except Exception as error:
+
+            logger.exception(
+                "Gagal menjalankan %s: %s. "
+                "event_valid.csv tidak diperbarui.",
+                name,
+                error
+            )
+
+            return False
+
+    logger.info("event_valid.csv berhasil diperbarui.")
+
+    return True
+
+
+# =========================================================
 # MENGHUBUNGKAN SCHEDULER DENGAN SCRAPER WISATAKP
 # =========================================================
 
@@ -411,8 +736,9 @@ def scrape_wisata_kp():
         2. Mengimpor scraper.
         3. Menjalankan scraping incremental.
         4. Mengekstrak kandidat event.
-        5. Membaca CSV event.
-        6. Mengembalikan event dalam list dictionary.
+        5. Menjalankan filtering dan validasi (event_valid.csv).
+        6. Membaca CSV event.
+        7. Mengembalikan event dalam list dictionary.
     """
 
     # Mengatur direktori aktif ke root project.
@@ -434,6 +760,10 @@ def scrape_wisata_kp():
     )
 
     scraper_event.extract_event_candidates()
+
+    # Filtering, ekstraksi tanggal/lokasi, dan validasi
+    # sehingga event baru masuk ke event_valid.csv untuk bot.
+    run_event_pipeline()
 
     # Mengambil lokasi file event.
     event_file = Path(scraper_event.EVENT_FILE)
@@ -620,23 +950,15 @@ async def run_scraping_check(
         # PENGIRIMAN NOTIFIKASI
         # =================================================
 
-        if application is not None:
+        # Event baru tidak dikirim saat ditemukan. Pengingatnya dikirim
+        # H-1 sebelum acara oleh run_reminder_check(), sehingga cukup
+        # dicatat di sini agar tidak terdeteksi berulang.
+        notification_success = True
 
-            # Mengirim notifikasi Telegram.
-            notification_success = await send_notification(
-                application,
-                new_events
-            )
-
-        else:
-
-            # Mode test tanpa Telegram.
-            notification_success = True
-
-            logger.info(
-                "Mode test tanpa Telegram. "
-                "Event baru hanya ditampilkan di terminal."
-            )
+        logger.info(
+            "Event baru dicatat. "
+            "Pengingat akan dikirim H-1 sebelum acara."
+        )
 
         # =================================================
         # MENYIMPAN EVENT YANG SUDAH DIPROSES
@@ -682,12 +1004,14 @@ async def run_scraping_check(
 
 async def scheduler_loop(
     application,
-    scrape_callback
+    scrape_callback,
+    reminder_callback=None
 ):
     """
     Menjalankan scheduler secara berulang.
 
-    Scraping langsung dijalankan saat scheduler dimulai.
+    Scraping langsung dijalankan saat scheduler dimulai,
+    lalu pengingat H-1 diperiksa.
     Setelah selesai, scheduler menunggu 6 jam.
     """
 
@@ -697,6 +1021,12 @@ async def scheduler_loop(
         await run_scraping_check(
             application,
             scrape_callback
+        )
+
+        # Mengirim pengingat event yang berlangsung besok.
+        await run_reminder_check(
+            application,
+            reminder_callback
         )
 
         logger.info(
@@ -716,7 +1046,8 @@ async def scheduler_loop(
 
 async def start_scheduler(
     application,
-    scrape_callback=scrape_wisata_kp
+    scrape_callback=scrape_wisata_kp,
+    reminder_callback=None
 ):
     """
     Memulai scheduler sebagai background task.
@@ -742,7 +1073,8 @@ async def start_scheduler(
     application.scheduler_task = asyncio.create_task(
         scheduler_loop(
             application,
-            scrape_callback
+            scrape_callback,
+            reminder_callback
         )
     )
 
@@ -1082,6 +1414,101 @@ async def test_scheduler_cycle():
 
 
 # =========================================================
+# PENGUJIAN PENGINGAT H-1
+# =========================================================
+
+async def test_reminder_flow():
+    """
+    Menguji:
+    1. Pengingat tidak dikirim sebelum jam 08:00 WIB.
+    2. Pengingat dikirim ke semua penerima.
+    3. Event yang sama tidak diingatkan dua kali.
+    4. Pengguna yang memblokir bot dihapus dari daftar penerima.
+
+    Pengujian menggunakan file sementara.
+    """
+
+    import tempfile
+
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    logger.info("=" * 50)
+    logger.info("TEST PENGINGAT H-1")
+    logger.info("=" * 50)
+
+    sent_messages = []
+
+    class FakeBot:
+
+        async def send_message(self, chat_id, text, **kwargs):
+
+            if chat_id == 999:
+                from telegram.error import Forbidden
+                raise Forbidden("bot diblokir")
+
+            sent_messages.append((chat_id, text))
+
+    fake_app = SimpleNamespace(bot=FakeBot())
+
+    def fake_reminders():
+        return [("https://contoh.com/event-besok", "pesan pengingat")]
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+
+        temp_path = Path(temp_dir)
+
+        with patch(
+            __name__ + ".EVENT_DIR", temp_path
+        ), patch(
+            __name__ + ".SUBSCRIBERS_FILE", temp_path / "subscribers.json"
+        ), patch(
+            __name__ + ".REMINDED_EVENTS_FILE", temp_path / "reminded.json"
+        ), patch(
+            __name__ + ".TELEGRAM_CHAT_ID", None
+        ):
+
+            add_subscriber(111)
+            add_subscriber(222)
+            add_subscriber(999)
+
+            # CHECK 1: terlalu pagi.
+            pagi = datetime(2026, 11, 29, 6, 0, tzinfo=WIB)
+
+            await run_reminder_check(fake_app, fake_reminders, now=pagi)
+
+            assert not sent_messages, (
+                "TEST GAGAL: Pengingat terkirim sebelum jam 08:00."
+            )
+
+            # CHECK 2: jam kirim.
+            siang = datetime(2026, 11, 29, 9, 0, tzinfo=WIB)
+
+            await run_reminder_check(fake_app, fake_reminders, now=siang)
+
+            assert sorted(chat for chat, _ in sent_messages) == [111, 222], (
+                "TEST GAGAL: Penerima pengingat tidak sesuai."
+            )
+
+            # CHECK 3: pengguna yang memblokir bot dihapus.
+            assert 999 not in load_subscribers(), (
+                "TEST GAGAL: Pengguna yang memblokir bot masih terdaftar."
+            )
+
+            # CHECK 4: tidak dikirim ulang.
+            await run_reminder_check(fake_app, fake_reminders, now=siang)
+
+            assert len(sent_messages) == 2, (
+                "TEST GAGAL: Pengingat terkirim berulang."
+            )
+
+    logger.info("TEST PENGINGAT H-1: BERHASIL")
+    logger.info("=" * 50)
+
+    return True
+
+
+# =========================================================
 # TEST FINAL SCHEDULER
 # =========================================================
 
@@ -1101,7 +1528,10 @@ async def run_scheduler_tests():
     # TEST 2: Baseline, event baru, dan siklus.
     await test_scheduler_cycle()
 
-    # TEST 3: Konfigurasi interval.
+    # TEST 3: Pengingat H-1.
+    await test_reminder_flow()
+
+    # TEST 4: Konfigurasi interval.
     assert SCRAPING_INTERVAL_HOURS == 6, (
         "TEST GAGAL: Interval scheduler bukan 6 jam."
     )

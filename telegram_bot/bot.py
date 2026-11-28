@@ -1,28 +1,31 @@
 # -*- coding: utf-8 -*-
 """
-WisataKP Telegram Bot - Versi 2.0 (revisi sesuai PRD)
+WisataKP - Telegram Bot informasi event dan destinasi wisata Kulon Progo.
 
-Struktur file:
-  1. Konfigurasi & logging
-  2. Pembacaan dataset (CSV event & destinasi)
-  3. Utilitas teks & tanggal
-  4. Logika event (daftar, pencarian, format)
-  5. Logika destinasi (kategori, pencarian, detail)
-  6. Helper pengiriman pesan Telegram
-  7. Handler menu & state percakapan
-  8. Penanganan error
-  9. Main
+Menu:
+    📅 Daftar Event   : maksimal 5 event (3 akan datang, 2 hari ini)
+    🔍 Cari Event     : pencarian kata kunci, bisa diulang tanpa memilih menu
+    🏞️ Wisata         : pilih kategori, lalu ketik nama destinasi
+    ❓ Bantuan
+
+Notifikasi:
+    Scheduler (scheduler.py) berjalan di dalam bot ini: scraping tiap 6 jam
+    dan pengingat event H-1 ke semua pengguna yang menekan /start.
+
+Catatan data:
+    CSV dibaca lewat cache yang memeriksa waktu modifikasi file, sehingga
+    bila CSV diperbarui oleh proses lain (mis. scheduler scraping) bot
+    otomatis memakai data terbaru tanpa perlu restart.
 """
 
 import csv
-import fnmatch
+import importlib
 import io
 import logging
 import os
 import re
-import time
+import sys
 import unicodedata
-from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from html import escape, unescape
@@ -49,11 +52,11 @@ from telegram.ext import (
 try:  # python-telegram-bot >= 21
     from telegram import LinkPreviewOptions
 
-    PREVIEW_KW = {"link_preview_options": LinkPreviewOptions(is_disabled=True)}
+    NO_PREVIEW = {"link_preview_options": LinkPreviewOptions(is_disabled=True)}
 except ImportError:  # python-telegram-bot 20.x
-    PREVIEW_KW = {"disable_web_page_preview": True}
+    NO_PREVIEW = {"disable_web_page_preview": True}
 
-try:  # opsional: baca TELEGRAM_BOT_TOKEN dari file .env
+try:  # opsional: membaca TELEGRAM_BOT_TOKEN dari file .env
     from dotenv import load_dotenv
 
     load_dotenv()
@@ -62,58 +65,54 @@ except ImportError:
 
 
 # =========================================================
-# 1. KONFIGURASI & LOGGING
+# KONFIGURASI
 # =========================================================
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-SCRIPT_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent
 
-# Folder yang dicari (berdasarkan lokasi file bot.py, bukan
-# current working directory). Mencakup bot.py di root project
-# maupun di dalam subfolder (misal bot/bot.py).
-SEARCH_ROOTS = [SCRIPT_DIR, SCRIPT_DIR.parent]
-SKIP_DIRS = {
-    "venv", ".venv", "env", "node_modules", "__pycache__",
-    "site-packages", ".git", ".idea", ".vscode",
-}
-MAX_SEARCH_DEPTH = 4
+# Folder tempat CSV dicari (berdasarkan lokasi bot.py, bukan folder kerja).
+_SUBFOLDERS = (
+    "", "data", "data/events", "data/validated", "data/validation",
+    "data/processed", "data/destinations", "validation",
+)
+SEARCH_DIRS = [
+    root / sub
+    for root in (BASE_DIR, BASE_DIR.parent, BASE_DIR.parent.parent)
+    for sub in _SUBFOLDERS
+]
 
-# Boleh dioverride lewat environment variable bila perlu:
-#   EVENT_CSV_PATH=/path/ke/event_valid.csv
-#   DESTINATION_CSV_PATH=/path/ke/destinasi_60_final.csv
-EVENT_FILE_PATTERNS = ["event_valid*.csv"]
-DESTINATION_FILE_PATTERNS = [
+# Jika beberapa file cocok, file yang paling baru diubah yang dipakai.
+EVENT_PATTERNS = ["event_valid*.csv"]
+DESTINATION_PATTERNS = [
     "destinasi_60_final*.csv",
     "destinasi_clean*.csv",
     "destinasi*.csv",
 ]
 
-MAX_EVENT_LIST = 5       # Daftar Event: maksimal 5, tanpa pagination
-MAX_SEARCH_RESULTS = 5   # Cari Event: maksimal 5 per respons
-MAX_RELATED_EVENTS = 3   # Event terkait pada detail destinasi
-TELEGRAM_SAFE_LIMIT = 3900
+MAX_EVENT_LIST = 5
+MAX_UPCOMING = 3  # jumlah event "akan datang" pada Daftar Event
+MAX_TODAY = 2     # jumlah event "hari ini" pada Daftar Event
+MAX_SEARCH_RESULTS = 5
+MAX_RELATED_EVENTS = 3
+MESSAGE_LIMIT = 3900  # batas aman (Telegram menolak di atas 4096 karakter)
 
 WIB = timezone(timedelta(hours=7))
 
 logging.basicConfig(
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    format="%(asctime)s | %(levelname)s | %(message)s",
     level=logging.INFO,
 )
-# httpx mencetak URL request (berisi token bot) pada level INFO
+# httpx mencetak URL request yang berisi token bot
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 log = logging.getLogger("wisatakp")
 
 
-def today_wib():
-    """Tanggal hari ini menurut WIB (bukan zona waktu server)."""
-    return datetime.now(WIB).date()
-
-
-# ---------------------------------------------------------
-# Menu & state
-# ---------------------------------------------------------
+# =========================================================
+# MENU, KATEGORI, DAN MODE PERCAKAPAN
+# =========================================================
 
 MENU_DAFTAR = "📅 Daftar Event"
 MENU_CARI = "🔍 Cari Event"
@@ -121,89 +120,92 @@ MENU_WISATA = "🏞️ Wisata"
 MENU_BANTUAN = "❓ Bantuan"
 
 MENU = ReplyKeyboardMarkup(
-    [[MENU_DAFTAR, MENU_CARI], [MENU_WISATA, MENU_BANTUAN]],
+    [[MENU_DAFTAR], [MENU_CARI], [MENU_WISATA], [MENU_BANTUAN]],
     resize_keyboard=True,
     input_field_placeholder="Pilih menu WisataKP",
 )
-
-MODE_MENU = "menu"                  # menu utama
-MODE_EVENT_SEARCH = "event_search"  # pencarian event
-MODE_WISATA_MENU = "wisata_menu"    # memilih kategori wisata
-MODE_WISATA_SEARCH = "wisata_search"  # pencarian destinasi
 
 KATEGORI_WISATA = [
     "🏖️ Pantai",
     "🌿 Wisata Alam",
     "🏡 Desa Wisata",
-    "☕ Kuliner & Tempat Nongkrong",
+    "💦 Wisata Air",
     "⛰️ Panorama",
 ]
 
-MSG_PILIH_MENU = "👇 Silakan pilih menu yang tersedia di bawah."
-MSG_DATA_EVENT_ERROR = (
-    "⚠️ <b>Data event belum bisa dimuat</b>\n"
-    "<i>Silakan coba lagi beberapa saat lagi.</i>"
+# Mode percakapan (disimpan di context.user_data["mode"]); None = menu utama.
+MODE_SEARCH = "search"            # mengetik kata kunci event
+MODE_WISATA_MENU = "wisata_menu"  # memilih kategori wisata
+MODE_WISATA = "wisata_search"     # mengetik nama destinasi
+
+BACK_WORDS = {"menu", "menu utama", "kembali"}
+
+MSG_PILIH_MENU = "Silakan pilih menu yang tersedia."
+MSG_EVENT_ERROR = (
+    "⚠️ Data event sedang tidak dapat dimuat. "
+    "Silakan coba lagi beberapa saat lagi."
 )
-MSG_DATA_DESTINASI_ERROR = (
-    "⚠️ <b>Data destinasi belum bisa dimuat</b>\n"
-    "<i>Silakan coba lagi beberapa saat lagi.</i>"
+MSG_DESTINASI_ERROR = (
+    "⚠️ Data destinasi wisata sedang tidak dapat dimuat. "
+    "Silakan coba lagi beberapa saat lagi."
 )
 
 
 # =========================================================
-# 2. PEMBACAAN DATASET
+# UTILITAS TEKS
 # =========================================================
 
-def _walk_limited(root, max_depth=MAX_SEARCH_DEPTH):
-    """os.walk dengan batas kedalaman dan folder yang diabaikan."""
-    base_depth = len(root.parts)
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [
-            d for d in dirnames
-            if d not in SKIP_DIRS and not d.startswith(".")
-        ]
-        path = Path(dirpath)
-        if len(path.parts) - base_depth >= max_depth:
-            dirnames[:] = []
-        yield path, filenames
+EMPTY_VALUES = {"", "nan", "none", "null", "-", "n/a"}
+
+EMOJI_RE = re.compile(
+    "[\U0001F000-\U0001FAFF\U0001F1E6-\U0001F1FF"
+    "\u2600-\u27BF\u2B00-\u2BFF\u200d\ufe0f]"
+)
 
 
-def find_dataset_file(patterns, env_var):
-    """Mencari file CSV berdasarkan lokasi project."""
+def get_value(row, candidates):
+    """Nilai pertama yang terisi dari daftar nama kolom, atau '-'."""
 
-    override = os.getenv(env_var)
-    if override:
-        path = Path(override).expanduser()
-        if not path.is_absolute():
-            path = SCRIPT_DIR / path
-        if path.is_file():
-            return path
-        log.error("%s=%s menunjuk ke file yang tidak ada.", env_var, path)
-        return None
+    for column in candidates:
+        value = str(row.get(column) or "").strip()
+        if value.lower() not in EMPTY_VALUES:
+            return value
+    return "-"
 
-    found = {}
-    for root in SEARCH_ROOTS:
-        if not root.is_dir():
-            continue
-        for folder, filenames in _walk_limited(root):
-            depth = len(folder.parts)
-            for filename in filenames:
-                for index, pattern in enumerate(patterns):
-                    if fnmatch.fnmatch(filename.lower(), pattern.lower()):
-                        path = (folder / filename).resolve()
-                        key = (index, depth)
-                        if path not in found or key < found[path]:
-                            found[path] = key
-                        break
 
-    if not found:
-        return None
+def normalize_text(text):
+    """Huruf kecil, tanpa aksen dan tanda baca, spasi dirapikan."""
 
-    return min(found, key=lambda p: (found[p], str(p)))
+    text = unicodedata.normalize("NFKD", str(text or ""))
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = re.sub(r"[^a-z0-9\s]", " ", text.lower())
+    return re.sub(r"\s+", " ", text).strip()
 
+
+def clean_text(text):
+    """Merapikan teks untuk tampilan: entitas HTML, markdown, emoji, spasi."""
+
+    text = unescape(str(text or ""))
+    text = re.sub(r"[*_`#]{1,3}", "", text)
+    text = EMOJI_RE.sub("", text).replace("\xa0", " ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def shorten(text, max_length):
+    """Memotong di batas kata dan menambahkan '...' bila terpotong."""
+
+    if len(text) <= max_length:
+        return text
+    cut = text[:max_length].rsplit(" ", 1)[0]
+    return cut.rstrip(" .,;:–-") + "..."
+
+
+# =========================================================
+# PEMBACAAN DATASET
+# =========================================================
 
 def read_csv_rows(path):
-    """Membaca CSV; nama kolom dinormalisasi (huruf kecil, tanpa spasi)."""
+    """Membaca CSV; mengembalikan (kolom, baris) dengan nama kolom huruf kecil."""
 
     raw = path.read_bytes()
     text = None
@@ -213,240 +215,169 @@ def read_csv_rows(path):
             break
         except UnicodeDecodeError:
             continue
-
     if text is None:
-        raise ValueError("Encoding file tidak dikenali.")
+        raise ValueError("encoding file tidak dikenali")
 
-    first_line = text.splitlines()[0] if text.strip() else ""
-    delimiter = max([",", ";", "\t"], key=first_line.count)
+    header = text.splitlines()[0] if text.strip() else ""
+    delimiter = max([",", ";", "\t"], key=header.count)
 
     reader = csv.DictReader(io.StringIO(text, newline=""), delimiter=delimiter)
+    columns = {name.strip().lower() for name in (reader.fieldnames or []) if name}
 
     rows = []
-    for raw_row in reader:
-        row = {}
-        for key, value in raw_row.items():
-            if not key or not isinstance(value, str):
-                continue
-            row[key.strip().lower()] = value.strip()
+    for record in reader:
+        row = {
+            key.strip().lower(): value.strip()
+            for key, value in record.items()
+            if key and isinstance(value, str)
+        }
         if any(row.values()):
             rows.append(row)
+    return columns, rows
 
-    return rows
 
-
-class CsvDataset:
+class Dataset:
     """
-    Dataset CSV dengan cache berbasis waktu modifikasi file.
-    get() mengembalikan:
-      - list (bisa kosong bila dataset memang kosong), atau
-      - None bila dataset tidak ditemukan / gagal dimuat
-        (supaya tidak disamakan dengan "hasil tidak ditemukan").
+    Dataset CSV dengan cache berdasarkan waktu modifikasi file.
+
+    load() mengembalikan list (bisa kosong bila datanya memang kosong),
+    atau None bila file tidak ditemukan / gagal dibaca. Perbedaan ini
+    mencegah bot menyatakan "tidak ditemukan" padahal datanya gagal dimuat.
     """
 
-    SEARCH_COOLDOWN = 30  # detik antar pencarian ulang file yang hilang
-
-    def __init__(self, label, patterns, env_var, row_filter):
-        self.label = label
-        self.patterns = patterns
+    def __init__(self, name, env_var, patterns, required_columns, row_filter):
+        self.name = name
         self.env_var = env_var
+        self.patterns = patterns
+        self.required_columns = required_columns
         self.row_filter = row_filter
         self.path = None
-        self._mtime = None
-        self._rows = None
-        self._last_search = None
+        self.mtime = None
+        self.rows = None
+        self._missing_logged = False
 
-    def _resolve_path(self):
-        if self.path and self.path.is_file():
-            return self.path
+    def find_file(self):
+        override = os.getenv(self.env_var)
+        if override:
+            path = Path(override).expanduser()
+            return path if path.is_file() else None
 
-        now = time.monotonic()
-        if (
-            self._last_search is not None
-            and now - self._last_search < self.SEARCH_COOLDOWN
-        ):
-            return None
-        self._last_search = now
+        for pattern in self.patterns:
+            matches = [
+                path
+                for folder in SEARCH_DIRS if folder.is_dir()
+                for path in folder.glob(pattern) if path.is_file()
+            ]
+            if matches:
+                return max(matches, key=lambda p: p.stat().st_mtime)
+        return None
 
-        self.path = find_dataset_file(self.patterns, self.env_var)
+    def load(self):
+        path = self.find_file()
 
-        if self.path is None:
-            log.error(
-                "Dataset %s tidak ditemukan. Pola file: %s | Folder dicari: %s",
-                self.label,
-                ", ".join(self.patterns),
-                ", ".join(str(r) for r in SEARCH_ROOTS),
-            )
-        else:
-            log.info("Dataset %s: %s", self.label, self.path)
-
-        return self.path
-
-    def get(self):
-        path = self._resolve_path()
         if path is None:
-            return None
+            if not self._missing_logged:
+                log.error(
+                    "CSV %s tidak ditemukan. Pola: %s | Folder dicari: %s",
+                    self.name,
+                    ", ".join(self.patterns),
+                    ", ".join(str(d) for d in SEARCH_DIRS if d.is_dir()),
+                )
+                self._missing_logged = True
+            return self.rows  # data lama bila pernah berhasil dimuat
+
+        self._missing_logged = False
+        mtime = path.stat().st_mtime
+
+        if self.rows is not None and path == self.path and mtime == self.mtime:
+            return self.rows
 
         try:
-            mtime = path.stat().st_mtime
-        except OSError as error:
-            log.error("Tidak dapat mengakses %s: %s", path, error)
-            self.path = None
-            return self._rows
-
-        if self._rows is not None and mtime == self._mtime:
-            return self._rows
-
-        try:
-            all_rows = read_csv_rows(path)
-            rows = self.row_filter(all_rows, self.label)
+            columns, all_rows = read_csv_rows(path)
+            if not columns & self.required_columns:
+                raise ValueError("kolom yang dibutuhkan tidak ditemukan (file rusak/tidak lengkap?)")
+            rows = self.row_filter(all_rows)
         except Exception as error:  # noqa: BLE001
-            log.error("Gagal membaca dataset %s (%s): %s", self.label, path, error)
-            return self._rows
+            # File sedang ditulis proses lain / rusak: tetap pakai data lama.
+            log.error("Gagal membaca CSV %s (%s): %s", self.name, path, error)
+            return self.rows
 
-        self._rows = rows
-        self._mtime = mtime
+        self.rows, self.path, self.mtime = rows, path, mtime
         log.info(
-            "Dataset %s dimuat: %d baris dipakai dari %d baris.",
-            self.label, len(rows), len(all_rows),
+            "CSV %s dimuat: %d dari %d baris | %s",
+            self.name, len(rows), len(all_rows), path,
         )
-        return rows
+        return self.rows
 
 
-def filter_valid_events(rows, label):
-    """Hanya event dengan status_validasi 'valid' (bila kolomnya ada)."""
+def filter_valid_events(rows):
+    """Hanya event valid; baris yang ditandai duplikat dilewati."""
 
-    result = []
+    events = []
     for row in rows:
-        status = row.get("status_validasi", "").strip().lower()
+        status = row.get("status_validasi", "").lower()
         if status and not status.startswith("valid"):
             continue
-        # Kolom penanda duplikat dari proses scraping/validasi
-        if (
-            row.get("duplikat_url", "").strip().lower() == "true"
-            or row.get("duplikat_judul", "").strip().lower() == "true"
-        ):
+        if "true" in (row.get("duplikat_url", "").lower(),
+                      row.get("duplikat_judul", "").lower()):
             continue
-        result.append(row)
-    return result
+        events.append(row)
+    return events
 
 
-NEGATIVE_DECISIONS = (
-    "hapus", "buang", "drop", "remove", "delete",
-    "exclude", "tolak", "eliminasi", "tidak",
-)
+def filter_destinations(rows):
+    """Hanya destinasi yang dipertahankan pada proses validasi."""
 
-
-def filter_destinations(rows, label):
-    """
-    Memuat seluruh destinasi yang punya nama. Hanya baris yang secara
-    eksplisit ditandai dihapus pada kolom 'keputusan' yang dilewati.
-    Rincian baris yang dilewati dicatat di log agar mudah diperiksa.
-    """
-
-    result = []
-    seen = set()
-    skipped = Counter()
-
+    destinations, seen = [], set()
     for row in rows:
         name = get_destination_name(row)
         if name == "-":
-            skipped["tanpa nama"] += 1
             continue
 
-        decision = row.get("keputusan", "").strip().lower()
-        if decision.startswith(NEGATIVE_DECISIONS):
-            skipped[f"keputusan={decision}"] += 1
+        decision = row.get("keputusan", "").lower()
+        if decision and decision not in ("pertahankan", "keep"):
             log.info("Destinasi dilewati (keputusan=%s): %s", decision, name)
             continue
 
         key = normalize_text(name)
         if key in seen:
-            skipped["duplikat"] += 1
             log.info("Destinasi dilewati (duplikat): %s", name)
             continue
         seen.add(key)
 
-        result.append(row)
-
-    if skipped:
-        log.info("Destinasi dilewati: %s", dict(skipped))
-
-    return result
+        destinations.append(row)
+    return destinations
 
 
-EVENTS = CsvDataset(
-    "event", EVENT_FILE_PATTERNS, "EVENT_CSV_PATH", filter_valid_events
+EVENTS = Dataset(
+    "event", "EVENT_CSV_PATH", EVENT_PATTERNS,
+    {"nama_event", "judul_event", "judul", "title", "nama"},
+    filter_valid_events,
 )
-DESTINATIONS = CsvDataset(
-    "destinasi", DESTINATION_FILE_PATTERNS,
-    "DESTINATION_CSV_PATH", filter_destinations,
+DESTINATIONS = Dataset(
+    "destinasi", "DESTINATION_CSV_PATH", DESTINATION_PATTERNS,
+    {"title", "nama", "nama_destinasi", "name"},
+    filter_destinations,
 )
+
+
+def load_events():
+    return EVENTS.load()
+
+
+def load_destinations():
+    return DESTINATIONS.load()
 
 
 # =========================================================
-# 3. UTILITAS TEKS & TANGGAL
+# TANGGAL
 # =========================================================
 
-EMPTY_VALUES = {"", "nan", "none", "null", "-", "n/a"}
-
-
-def get_value(row, candidates):
-    """Nilai pertama yang terisi dari daftar nama kolom (huruf kecil)."""
-
-    for column in candidates:
-        value = row.get(column)
-        if value is None:
-            continue
-        value = str(value).strip()
-        if value.lower() in EMPTY_VALUES:
-            continue
-        return value
-    return "-"
-
-
-def normalize_text(text):
-    """Huruf kecil, tanpa aksen/tanda baca, spasi dirapikan."""
-
-    text = unicodedata.normalize("NFKD", str(text or ""))
-    text = "".join(c for c in text if not unicodedata.combining(c))
-    text = re.sub(r"[^a-z0-9\s]", " ", text.lower())
-    return re.sub(r"\s+", " ", text).strip()
-
-
-EMOJI_RE = re.compile(
-    "[\U0001F000-\U0001FAFF\U0001F1E6-\U0001F1FF"
-    "\u2600-\u27BF\u2B00-\u2BFF\u200d\ufe0f]"
-)
-
-
-def strip_emoji(text):
-    return EMOJI_RE.sub("", text)
-
-
-def collapse_spaces(text):
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def clean_text(text):
-    """
-    Pembersihan dasar untuk tampilan: entitas HTML (&ndash;), penanda
-    markdown (**tebal**), emoji, dan spasi berlebih. Data CSV tidak diubah.
-    """
-
-    text = unescape(str(text or ""))
-    text = re.sub(r"[*_`#]{1,3}", "", text)
-    text = strip_emoji(text).replace("\xa0", " ")
-    return collapse_spaces(text)
-
-
-BULAN_INDONESIA = {
-    "januari": 1, "jan": 1, "februari": 2, "feb": 2,
-    "maret": 3, "mar": 3, "april": 4, "apr": 4, "mei": 5,
-    "juni": 6, "jun": 6, "juli": 7, "jul": 7,
-    "agustus": 8, "agu": 8, "ags": 8, "ag": 8,
-    "september": 9, "sep": 9, "sept": 9,
-    "oktober": 10, "okt": 10, "november": 11, "nov": 11,
+BULAN = {
+    "januari": 1, "jan": 1, "februari": 2, "feb": 2, "maret": 3, "mar": 3,
+    "april": 4, "apr": 4, "mei": 5, "juni": 6, "jun": 6, "juli": 7, "jul": 7,
+    "agustus": 8, "agu": 8, "ags": 8, "ag": 8, "september": 9, "sep": 9,
+    "sept": 9, "oktober": 10, "okt": 10, "november": 11, "nov": 11,
     "desember": 12, "des": 12,
 }
 NAMA_BULAN = [
@@ -454,7 +385,7 @@ NAMA_BULAN = [
     "Agustus", "September", "Oktober", "November", "Desember",
 ]
 
-_MONTH = "|".join(sorted(BULAN_INDONESIA, key=len, reverse=True))
+_MONTH = "|".join(sorted(BULAN, key=len, reverse=True))
 ISO_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 RANGE_RE = re.compile(
     rf"(\d{{1,2}})(?:\s+({_MONTH})\b)?(?:\s+(\d{{4}}))?"
@@ -462,14 +393,19 @@ RANGE_RE = re.compile(
     rf"(\d{{1,2}})\s+({_MONTH})\b\s+(\d{{4}})"
 )
 SINGLE_RE = re.compile(rf"(\d{{1,2}})\s+({_MONTH})\b\s+(\d{{4}})")
-NUMERIC_FORMATS = ["%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y", "%d-%m-%y"]
+NUMERIC_FORMATS = ("%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y", "%d-%m-%y")
 
 
-def parse_event_span(value):
+def today():
+    """Tanggal hari ini menurut WIB."""
+    return datetime.now(WIB).date()
+
+
+def parse_date_range(value):
     """
-    Mengembalikan (tanggal_mulai, tanggal_selesai) atau (None, None).
-    Mendukung tanggal tunggal, rentang ("12-14 Januari 2026"),
-    format ISO, dan format angka dd/mm/yyyy.
+    Mengubah teks tanggal menjadi (mulai, selesai), atau (None, None).
+    Mendukung ISO, rentang ("12-14 Januari 2026"), tanggal Indonesia,
+    dan angka (dd/mm/yyyy).
     """
 
     if not value or value == "-":
@@ -477,43 +413,35 @@ def parse_event_span(value):
 
     text = str(value).strip().lower()
 
-    # Format ISO (satu atau lebih tanggal)
-    iso_dates = []
+    iso = []
     for item in ISO_RE.findall(text):
         try:
-            iso_dates.append(datetime.strptime(item, "%Y-%m-%d").date())
+            iso.append(datetime.strptime(item, "%Y-%m-%d").date())
         except ValueError:
             pass
-    if iso_dates:
-        return min(iso_dates), max(iso_dates)
+    if iso:
+        return min(iso), max(iso)
 
-    # Rentang tanggal Indonesia
     match = RANGE_RE.search(text)
     if match:
         d1, m1, y1, d2, m2, y2 = match.groups()
         try:
-            end = date(int(y2), BULAN_INDONESIA[m2], int(d2))
-            start = date(
-                int(y1 or y2),
-                BULAN_INDONESIA[m1 or m2],
-                int(d1),
-            )
+            end = date(int(y2), BULAN[m2], int(d2))
+            start = date(int(y1 or y2), BULAN[m1 or m2], int(d1))
             if start <= end:
                 return start, end
         except (ValueError, KeyError):
             pass
 
-    # Satu atau beberapa tanggal Indonesia
     singles = []
     for d, m, y in SINGLE_RE.findall(text):
         try:
-            singles.append(date(int(y), BULAN_INDONESIA[m], int(d)))
-        except (ValueError, KeyError):
+            singles.append(date(int(y), BULAN[m], int(d)))
+        except ValueError:
             pass
     if singles:
         return min(singles), max(singles)
 
-    # Format angka
     for fmt in NUMERIC_FORMATS:
         try:
             parsed = datetime.strptime(text, fmt).date()
@@ -524,11 +452,14 @@ def parse_event_span(value):
     return None, None
 
 
-def format_date_range(start, end):
+def format_date_indonesia(start, end=None):
+    """Contoh: '29 November 2026' atau '27–29 November 2026'."""
+
     if start is None:
-        return None
+        return "Tanggal belum tersedia"
     if end is None or end == start:
         return f"{start.day} {NAMA_BULAN[start.month - 1]} {start.year}"
+
     if (start.month, start.year) == (end.month, end.year):
         return f"{start.day}–{end.day} {NAMA_BULAN[end.month - 1]} {end.year}"
     if start.year == end.year:
@@ -542,22 +473,12 @@ def format_date_range(start, end):
     )
 
 
-def shorten_sentence_text(text, max_length):
-    """Memotong teks di batas kata, memakai '...' bila terpotong."""
-    if len(text) <= max_length:
-        return text
-    cut = text[:max_length].rsplit(" ", 1)[0]
-    return cut.rstrip(" .,;:–-") + "..."
-
-
 # =========================================================
-# 4. LOGIKA EVENT
+# HELPER DATA EVENT
 # =========================================================
 
 def get_event_name(row):
-    return get_value(row, [
-        "nama_event", "judul_event", "judul", "title", "nama",
-    ])
+    return get_value(row, ["nama_event", "judul_event", "judul", "title", "nama"])
 
 
 def get_event_date(row):
@@ -589,41 +510,39 @@ def get_event_url(row):
     return url if url.lower().startswith(("http://", "https://")) else "-"
 
 
-# ---------------------------------------------------------
-# Pembersihan judul, lokasi, deskripsi (hanya untuk tampilan;
-# data CSV tidak diubah)
-# ---------------------------------------------------------
+# =========================================================
+# TAMPILAN EVENT: JUDUL, LOKASI, DESKRIPSI
+# (hanya mengubah tampilan, data CSV tidak diubah)
+# =========================================================
 
 REGION = r"(?:kab(?:upaten)?\.?\s*)?kulon\s*progo"
 LEADING_REGION_RE = re.compile(
     rf"^\s*[\(\[]?\s*{REGION}\s*[\)\]]?\s*[-–—:|,]\s*", re.IGNORECASE
-)
-DATELINE_RE = re.compile(
-    r"^\s*[A-Za-z .]{3,40},\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}\s*[-–—:]\s*"
 )
 TRAILING_SITE_RE = re.compile(
     rf"\s*[|–—-]\s*(?:{REGION}|pemerintah kabupaten kulon progo|"
     r"pemkab kulon progo|portal\b.*|[\w.-]+\.(?:go\.id|co\.id|com|id))\s*$",
     re.IGNORECASE,
 )
+DATELINE_RE = re.compile(
+    r"^\s*[A-Za-z .]{3,40},\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}\s*[-–—:]\s*"
+)
 PEMKAB_RE = re.compile(r"pemerintah\s+kabupaten\s+kulon\s*progo", re.IGNORECASE)
-
-
-SMALL_WORDS = {
-    "di", "dan", "yang", "ke", "dari", "untuk", "dengan", "pada", "atau",
-    "serta", "ing", "dalam", "oleh", "bagi", "hingga", "sampai", "se",
-}
 TIME_AGO_RE = re.compile(
     r"\s+\d+\s+(?:\d+\s+)?(?:detik|menit|jam|hari|minggu|bulan|tahun)"
     r"\s+yang\s+lalu.*$",
     re.IGNORECASE,
 )
+SMALL_WORDS = {
+    "di", "dan", "yang", "ke", "dari", "untuk", "dengan", "pada", "atau",
+    "serta", "ing", "dalam", "oleh", "bagi", "hingga", "sampai", "se",
+}
 
 
 def _slug_words(url):
-    """Kata-kata dari slug URL artikel (berisi judul lengkap), atau None."""
+    """Kata-kata pada slug URL artikel (memuat judul lengkap), atau None."""
 
-    if not url or url == "-":
+    if url == "-":
         return None
     slug = unquote(urlparse(url).path.rstrip("/").rsplit("/", 1)[-1])
     slug = re.sub(r"\.(?:html?|php)$", "", slug, flags=re.IGNORECASE)
@@ -634,27 +553,22 @@ def _slug_words(url):
 
 
 def _casing_map(row):
-    """
-    Huruf besar khusus (YRKI, KPHM, MyEndura) diambil dari teks asli
-    untuk menyusun judul dari slug URL yang berhuruf kecil.
-    """
+    """Singkatan (YRKI, KPHM, CoE) dari teks asli, untuk judul dari slug."""
 
     text = clean_text(" ".join([
         row.get("judul", ""), row.get("ringkasan", ""),
         row.get("deskripsi_event", ""),
     ]))
     words = re.findall(r"[A-Za-z][A-Za-z0-9]*", text)
-    seen_plain = {
-        w.lower() for w in words if w == w.lower() or w == w.capitalize()
-    }
+    plain = {w.lower() for w in words if w in (w.lower(), w.capitalize())}
 
     mapping = {}
-    for w in words:
-        lw = w.lower()
-        if lw in ("kulon", "progo") or lw in seen_plain:
+    for word in words:
+        lower = word.lower()
+        if lower in ("kulon", "progo") or lower in plain:
             continue
-        if (w.isupper() and 2 <= len(w) <= 6) or re.search(r"[a-z][A-Z]", w):
-            mapping.setdefault(lw, w)
+        if (word.isupper() and 2 <= len(word) <= 6) or re.search(r"[a-z][A-Z]", word):
+            mapping.setdefault(lower, word)
     return mapping
 
 
@@ -665,47 +579,42 @@ def _title_from_slug(row):
 
     casing = _casing_map(row)
 
-    # Potongan judul asli dipakai untuk memisahkan kata yang menempel di
-    # slug, mis. "sambanggoyear" -> "Sambanggo" + "Year".
+    # Kata yang menempel pada slug dipisah memakai judul asli,
+    # mis. "sambanggoyear" -> "Sambanggo" + "Year".
     fragment = clean_text(row.get("judul", "")).split("...")[0]
     original = [t for t in re.split(r"[\s,;:/()]+", fragment) if t]
-    pairs = {
-        (a + b).lower(): (a, b) for a, b in zip(original, original[1:])
-    }
+    pairs = {(a + b).lower(): (a, b) for a, b in zip(original, original[1:])}
     known = {t.lower() for t in original}
 
     expanded = []
-    for w in words:
-        if w not in known and w in pairs:
-            expanded.extend(pairs[w])
+    for word in words:
+        if word not in known and word in pairs:
+            expanded.extend(pairs[word])
         else:
-            expanded.append(w)
+            expanded.append(word)
 
-    parts = []
-    skip_next = False
-    for index, w in enumerate(expanded):
-        if skip_next:
-            skip_next = False
+    parts, skip = [], False
+    for index, word in enumerate(expanded):
+        if skip:
+            skip = False
             continue
-        lw = w.lower()
-        nxt = expanded[index + 1] if index + 1 < len(expanded) else ""
+        lower = word.lower()
+        following = expanded[index + 1] if index + 1 < len(expanded) else ""
 
-        if re.fullmatch(r"\d{1,2}", w) and re.fullmatch(r"\d{1,2}", nxt):
-            parts.append(f"{w}–{nxt}")  # "3 4 mei" -> "3–4 Mei"
-            skip_next = True
-        elif lw in casing:
-            parts.append(casing[lw])
-        elif index > 0 and lw in SMALL_WORDS:
-            parts.append(lw)
+        if re.fullmatch(r"\d{1,2}", word) and re.fullmatch(r"\d{1,2}", following):
+            parts.append(f"{word}–{following}")  # "3 4 mei" -> "3–4 Mei"
+            skip = True
+        elif lower in casing:
+            parts.append(casing[lower])
+        elif index > 0 and lower in SMALL_WORDS:
+            parts.append(lower)
         else:
-            parts.append(w[:1].upper() + w[1:].lower())
+            parts.append(word[:1].upper() + word[1:].lower())
 
-    # Nama inti kegiatan biasanya berakhir pada tahun penyelenggaraan:
-    # "Festival Paralayang 2026 Resmi Ditutup ..." -> "Festival Paralayang 2026"
+    # Nama inti kegiatan biasanya berakhir pada tahun penyelenggaraan.
     for index, token in enumerate(parts):
         if index >= 2 and re.fullmatch(r"20\d{2}", token):
             return " ".join(parts[:index + 1])
-
     return " ".join(parts)
 
 
@@ -713,51 +622,69 @@ def _title_from_name(row):
     """Cadangan bila URL tidak memuat slug judul."""
 
     name = clean_text(get_event_name(row))
-    if name == "-" or not name:
+    if name in ("", "-"):
         return None
 
-    # nama_event berbentuk "<judul terpotong>... <awal isi artikel> ..."
-    if "..." in name:
-        name = name.split("...")[0]
+    name = name.split("...")[0]  # "<judul terpotong>... <isi artikel>"
     name = TIME_AGO_RE.sub("", name)
-
     for _ in range(2):
         name = LEADING_REGION_RE.sub("", name)
         name = TRAILING_SITE_RE.sub("", name)
-    return name.strip(" -–—|:,")
+    name = name.strip(" -–—|:,")
+    return name.title() if name.isupper() else name
+
+
+# Judul berita sering berbentuk kalimat: "<pelaku> <kata kerja> <nama event>
+# <kata kerja> ...". Hanya nama event yang ditampilkan.
+LEAD_VERBS = (
+    r"meriahkan|memeriahkan|ramaikan|meramaikan|gelar|menggelar|luncurkan|"
+    r"meluncurkan|buka|membuka|tandai|menandai|sambut|menyambut|hadirkan|"
+    r"menghadirkan|sukseskan|menyukseskan|resmikan|meresmikan"
+)
+LEAD_VERB_RE = re.compile(rf"^(?:\S+\s+){{1,5}}?(?:{LEAD_VERBS})\s+(?=\S+\s+\S)", re.IGNORECASE)
+TRAIL_VERB_RE = re.compile(
+    r"\s+(?:perkuat|memperkuat|tingkatkan|meningkatkan|untuk|guna|demi|"
+    r"dalam\s+rangka|sebagai|dengan|yang)\b.*$",
+    re.IGNORECASE,
+)
+
+
+def core_title(name):
+    """'Ribuan Pelari Meriahkan Kulon Progo Half Marathon 2026' -> 'Kulon Progo Half Marathon 2026'."""
+
+    match = LEAD_VERB_RE.match(name)
+    if match:
+        name = name[match.end():]
+
+    cut = TRAIL_VERB_RE.sub("", name).strip()
+    if len(cut.split()) >= 2:  # jangan sampai judul tinggal satu kata
+        name = cut
+
+    words = name.split()
+    while words and words[-1].lower() in SMALL_WORDS:
+        words.pop()
+    return " ".join(words) or name
 
 
 def get_display_title(row):
-    """
-    Judul ringkas: nama inti kegiatan, bukan judul artikel berita.
-    Sumber utama: slug URL (judul lengkap); cadangan: nama_event.
-    """
+    """Judul ringkas berupa nama inti kegiatan, bukan judul berita panjang."""
 
-    name = _title_from_slug(row)
-    from_slug = bool(name)
-    if not from_slug:
-        name = _title_from_name(row)
+    name = _title_from_slug(row) or _title_from_name(row)
     if not name:
         return "Event Wisata"
 
-    name = PEMKAB_RE.sub("Pemkab Kulon Progo", name)
+    name = core_title(PEMKAB_RE.sub("Pemkab Kulon Progo", name))
 
-    # Judul cadangan berhuruf kapital semua diubah ke Title Case;
-    # judul dari slug sudah memiliki kapitalisasi yang benar.
-    if not from_slug and name.isupper():
-        name = name.title()
-
-    if len(name) > 80:
-        words, out = name.split(), []
-        for w in words:
-            if len(" ".join(out + [w])) > 76:
+    if len(name) > 60:
+        kept = []
+        for word in name.split():
+            if len(" ".join(kept + [word])) > 56:
                 break
-            out.append(w)
-        while out and out[-1].lower() in SMALL_WORDS:
-            out.pop()
-        name = " ".join(out) + "..."
-
-    return name.strip() or "Event Wisata"
+            kept.append(word)
+        while kept and kept[-1].lower() in SMALL_WORDS:
+            kept.pop()
+        name = " ".join(kept) + "..."
+    return name or "Event Wisata"
 
 
 LOCATION_CUT_RE = re.compile(
@@ -766,6 +693,15 @@ LOCATION_CUT_RE = re.compile(
     r"menjadi|digelar|terdapat|salah\s+satu|dilaksanakan|diselenggarakan|"
     r"melaksanakan|menggelar)\b.*$",
     re.IGNORECASE,
+)
+ADMIN_LABEL_RE = re.compile(
+    r"\b(?:kalurahan|kelurahan|kapanewon|kecamatan|padukuhan|dusun)\s+", re.IGNORECASE
+)
+REGION_ONLY_RE = re.compile(
+    r"(?:kab(?:upaten)?\.?\s*)?kulon\s*progo|(?:d\.?i\.?\s*)?yogyakarta|diy", re.IGNORECASE
+)
+TRAILING_REGION_RE = re.compile(
+    r"(?<!Pemkab)\s+(?:kab(?:upaten)?\.?\s+)?kulon\s*progo\s*$", re.IGNORECASE
 )
 DAY_NAMES = r"(?:senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu)"
 MONTH_NAMES = r"(?:" + "|".join(m.lower() for m in NAMA_BULAN) + r")"
@@ -783,325 +719,356 @@ def _is_date_part(part):
 
 def get_display_location(row):
     """
-    Lokasi yang dirapikan. Kolom lokasi_event_ekstrak hasil ekstraksi
-    sering memuat sisa kalimat, tanggal, atau terpotong; bagian tersebut
-    dibuang hanya pada tampilan.
+    Lokasi yang dirapikan. Hasil ekstraksi sering memuat sisa kalimat,
+    tanggal, atau terpotong; bagian tersebut dibuang hanya pada tampilan.
     """
 
-    raw = get_event_location(row)
-    if raw == "-":
+    original = PEMKAB_RE.sub("Pemkab Kulon Progo", clean_text(get_event_location(row)))
+    if not original:
         return "Lokasi belum tersedia"
 
-    original = clean_text(raw)
     text = re.sub(
-        r"^(?:bertempat\s+di|lokasi\s*:?|di)\s+", "", original,
-        flags=re.IGNORECASE,
+        r"^(?:bertempat\s+di|lokasi\s*:?|di)\s+", "", original, flags=re.IGNORECASE
     )
+    text = re.sub(r"\([^)]*\d[^)]*\)", "", text)  # (12/4/2025), (500m)
+    text = re.sub(r"\([^)]*$", "", text)          # kurung terpotong
 
-    text = re.sub(r"\([^)]*\d[^)]*\)", "", text)   # (12/4/2025), (500m)
-    text = re.sub(r"\([^)]*$", "", text)           # kurung terpotong
-
-    cut_text = LOCATION_CUT_RE.sub("", text)
-    was_cut = cut_text != text
-    text = cut_text.strip(" ,;")
+    cut = LOCATION_CUT_RE.sub("", text)
+    was_cut = cut != text
 
     parts, seen = [], set()
-    for part in re.split(r"\s*,\s*", text):
+    for part in re.split(r"\s*,\s*", cut.strip(" ,;")):
         key = normalize_text(part)
-        if not key or key in seen or _is_date_part(part):
-            continue
-        seen.add(key)
-        parts.append(part.strip())
+        if key and key not in seen and not _is_date_part(part):
+            seen.add(key)
+            parts.append(part.strip())
 
-    # Data lokasi sering terpotong di akhir; buang bagian terakhir
-    # yang kemungkinan tidak utuh.
-    if len(parts) > 1 and (
-        (len(original) >= 80 and not was_cut) or len(parts[-1]) <= 4
-    ):
+    # Data lokasi sering terpotong di akhir: buang bagian terakhir yang tak utuh.
+    if len(parts) > 1 and ((len(original) >= 80 and not was_cut) or len(parts[-1]) <= 4):
         parts.pop()
 
+    # Dipertajam: buang label wilayah (Kalurahan, Kapanewon) dan nama
+    # kabupaten yang sudah pasti Kulon Progo; sisakan venue + area saja.
+    sharp = []
+    for part in parts:
+        part = ADMIN_LABEL_RE.sub("", part).strip()
+        if REGION_ONLY_RE.fullmatch(part):
+            continue
+        part = TRAILING_REGION_RE.sub("", part).strip()
+        if part:
+            sharp.append(part)
+    parts = sharp or parts
+
     parts = [p.title() if p.islower() else p[:1].upper() + p[1:] for p in parts]
-
-    location = ", ".join(parts).strip()
-    if not location:
-        location = original or "Lokasi belum tersedia"
-
-    return shorten_sentence_text(location, 100)
+    return shorten(", ".join(parts[:3]) or original, 100)
 
 
 def clean_description(text):
+    """Membuang tautan, emoji, markdown, dan boilerplate berita di awal."""
+
     if not text or text == "-":
         return ""
 
-    text = clean_text(text)
-    text = re.sub(r"https?://\S+", "", text)
-    text = collapse_spaces(text)
+    text = re.sub(r"https?://\S+", "", clean_text(text))
+    text = re.sub(r"\s+", " ", text).strip()
 
-    # boilerplate berita di awal kalimat
     for _ in range(2):
         text = DATELINE_RE.sub("", text)
         text = LEADING_REGION_RE.sub("", text)
 
     text = re.sub(r"\bbaca juga\b.*$", "", text, flags=re.IGNORECASE)
-    text = PEMKAB_RE.sub("Pemkab Kulon Progo", text)
-    return text.strip()
+    return PEMKAB_RE.sub("Pemkab Kulon Progo", text).strip()
 
 
-def shorten_description(text, max_length=200):
-    """Satu atau dua kalimat pertama yang ringkas, tanpa emoji."""
+# Tanggal dan lokasi sudah tampil di baris sendiri, jadi tidak diulang
+# di deskripsi supaya ruangnya dipakai untuk isi acara.
+DAY_DATE_RE = re.compile(
+    rf"\s*(?:pada\s+)?(?:hari\s+)?{DAY_NAMES}?\s*\(\s*\d{{1,2}}[/-]\d{{1,2}}[/-]\d{{2,4}}\s*\)",
+    re.IGNORECASE,
+)
+# "..., bertempat di X" dan "..., yang digelar di X" dibuang seluruhnya.
+FULL_DATE_RE = re.compile(
+    rf"\s*(?:pada\s+)?(?:hari\s+)?(?:{DAY_NAMES},?\s*)?\d{{1,2}}\s+{MONTH_NAMES}\s+\d{{4}}\s*,?",
+    re.IGNORECASE,
+)
+VENUE_TAIL_RE = re.compile(
+    r",?\s*(?:(?:yang\s+)?(?:bertempat|berlokasi)|yang\s+(?:digelar|dilaksanakan|"
+    r"diselenggarakan|berlangsung))\s+di\b.*$",
+    re.IGNORECASE,
+)
+# "konferensi pers digelar di X" -> "konferensi pers digelar" (kata kerja dipertahankan).
+VENUE_VERB_RE = re.compile(
+    r"\b(digelar|dilaksanakan|diselenggarakan|berlangsung)\s+di\b.*$", re.IGNORECASE
+)
 
-    text = clean_description(text)
-    if not text:
-        return "Informasi event belum tersedia."
 
-    sentences = [
-        s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()
-    ]
+def first_sentences(text, max_length, enough=70):
+    """Kalimat pertama; kalimat berikutnya ditambah bila masih pendek."""
+
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
     if not sentences:
-        return "Informasi event belum tersedia."
+        return ""
 
     result = sentences[0]
-    if len(result) < 70 and len(sentences) > 1:
-        candidate = f"{result} {sentences[1]}"
-        if len(candidate) <= max_length:
-            result = candidate
-
-    return shorten_sentence_text(result, max_length)
-
-
-# ---------------------------------------------------------
-# Status event
-# ---------------------------------------------------------
-
-BUCKET_UPCOMING = "upcoming"
-BUCKET_TODAY = "today"
-BUCKET_YESTERDAY = "yesterday"
-BUCKET_PAST = "past"
-BUCKET_UNDATED = "undated"
-
-STATUS_LABEL = {
-    BUCKET_UPCOMING: "🟢 AKAN DATANG",
-    BUCKET_TODAY: "🟡 BERLANGSUNG HARI INI",
-    BUCKET_YESTERDAY: "🔴 BARU SAJA BERLALU",
-    BUCKET_PAST: "⚪ TELAH BERLALU",
-    BUCKET_UNDATED: "⚪ TANGGAL BELUM TERSEDIA",
-}
-
-LINE = "━━━━━━━━━━━━━━━━━━"
-
-
-def classify_event(row, today):
-    """Mengembalikan (bucket, tanggal_mulai, tanggal_selesai)."""
-
-    start, end = parse_event_span(get_event_date(row))
-
-    if start is None:
-        return BUCKET_UNDATED, None, None
-    if start > today:
-        return BUCKET_UPCOMING, start, end
-    if start <= today <= end:
-        return BUCKET_TODAY, start, end
-    if end == today - timedelta(days=1):
-        return BUCKET_YESTERDAY, start, end
-    return BUCKET_PAST, start, end
-
-
-def dedupe_events(rows):
-    """Menghilangkan event ganda (judul dan tanggal sama)."""
-
-    seen, result = set(), []
-    for row in rows:
-        key = (
-            normalize_text(get_display_title(row)),
-            normalize_text(get_event_date(row)),
-        )
-        if key in seen:
-            continue
-        seen.add(key)
-        result.append(row)
+    for sentence in sentences[1:]:
+        if len(result) >= enough or len(result) + 1 + len(sentence) > max_length:
+            break
+        result += " " + sentence
     return result
 
 
-# ---------------------------------------------------------
-# Format tampilan event (dipakai di semua menu)
-# ---------------------------------------------------------
+def shorten_description(text, max_length=160, empty="Informasi event belum tersedia."):
+    """Ringkasan satu kalimat berisi apa dan siapa, tanpa tanggal/lokasi."""
+
+    text = clean_description(text)
+    text = re.sub(r"\bKabupaten\s+Kulon\s*Progo\b", "Kulon Progo", text)
+    text = re.sub(r"\s+([.,;!?])", r"\1", FULL_DATE_RE.sub(" ", DAY_DATE_RE.sub("", text)))
+
+    result = first_sentences(text, max_length)
+    if not result:
+        return empty
+
+    trimmed = VENUE_TAIL_RE.sub("", result).rstrip(" ,;")
+    if trimmed == result:
+        trimmed = VENUE_VERB_RE.sub(r"\1", result).rstrip(" ,;")
+    if len(trimmed) >= 40:
+        result = trimmed
+
+    if len(result) > max_length:
+        # Lebih baik berhenti di koma/titik koma daripada di tengah frasa.
+        window = result[:max_length]
+        cut = max(window.rfind(", "), window.rfind("; "))
+        result = window[:cut] if cut >= max_length * 0.5 else shorten(result, max_length)
+
+    result = re.sub(r"\s+", " ", result).strip()
+    result = re.sub(r"[,;]+\s*\.", ".", result)  # "Kulon Progo,." -> "Kulon Progo."
+
+    if not result.endswith((".", "!", "?", "…")):
+        result += "."
+    return result
+
+
+# =========================================================
+# STATUS & EMOJI EVENT
+# =========================================================
+
+UPCOMING, TODAY, YESTERDAY, PAST, UNDATED = (
+    "upcoming", "today", "yesterday", "past", "undated"
+)
+
+STATUS_LABEL = {
+    UPCOMING: "🟢 Akan Datang",
+    TODAY: "🟡 Hari Ini",
+    YESTERDAY: "🔴 Kemarin",
+    PAST: "⚪ Lampau",
+    UNDATED: "⚪ Informasi tanggal",
+}
+
+
+def get_event_status(row, now):
+    """Mengembalikan (status, tanggal_mulai, tanggal_selesai)."""
+
+    start, end = parse_date_range(get_event_date(row))
+
+    if start is None:
+        return UNDATED, None, None
+    if start > now:
+        return UPCOMING, start, end
+    if end >= now:
+        return TODAY, start, end  # berlangsung hari ini (termasuk multi-hari)
+    if end == now - timedelta(days=1):
+        return YESTERDAY, start, end
+    return PAST, start, end
+
+
+# Urutan penting: aturan yang lebih spesifik ditaruh di atas.
+# Setiap kata dicocokkan dari awal kata (regex), jadi "seni\b" tidak cocok "senin".
+EMOJI_RULES = [
+    ("🏮", ["lampion"]),
+    ("🌅", ["sunset", "senja", "sunrise"]),
+    ("🏃", ["lari", "pelari", "marathon", "maraton", "running"]),
+    ("🚴", ["sepeda", "gowes", "cycling"]),
+    ("🪁", ["layang"]),
+    ("🎣", ["mancing", "pancing"]),
+    ("🎶", ["musik", "konser", "dangdut", "campursari"]),
+    ("🎭", ["tari", "teater", "wayang", "ketoprak", "kesenian", "bendrong",
+            "jathilan", "karawitan", r"seni\b", "budaya"]),
+    ("🤝", ["rapat", "rakor", "koordinasi", "konferensi", "sosialisasi", "audiensi"]),
+    ("📱", ["digital", "aplikasi", "teknologi", r"gora\b", r"pay\b"]),
+    ("🎓", ["seminar", "workshop", "pelatihan", "bimtek", "diklat"]),
+    ("🏆", ["lomba", "kejuaraan", "turnamen", "kompetisi", "juara"]),
+    ("🍜", ["kuliner", "makanan", "food", "bazar"]),
+    ("🛍️", ["pasar", "expo", "pameran", "umkm"]),
+    ("🌱", ["tanam", "bibit", "tani", "panen", "tuk tumuwuh"]),
+    ("🏖️", ["pantai", "laut", "bahari"]),
+    ("🏅", ["sport", "olahraga"]),
+    ("🎪", ["festival", "karnaval", "pawai"]),
+]
+
 
 def get_event_emoji(row):
-    text = (get_display_title(row) + " " + get_event_category(row)).lower()
-
-    groups = [
-        ("🏃", ["lari", "marathon", "maraton", "sport", "olahraga"]),
-        ("🎭", ["seni", "budaya", "festival", "tari", "musik"]),
-        ("🍜", ["kuliner", "makanan", "food"]),
-        ("🏖️", ["pantai", "laut"]),
-        ("🛍️", ["pasar", "expo", "pameran"]),
-    ]
-    for emoji, words in groups:
-        if any(word in text for word in words):
-            return emoji
+    # Judul diutamakan; kategori (sering "budaya, seni, hiburan" untuk
+    # hampir semua event) hanya dipakai bila judul tidak cocok aturan apa pun.
+    for source in (get_display_title(row), get_event_category(row)):
+        text = normalize_text(source)
+        for emoji, words in EMOJI_RULES:
+            if re.search(r"(?<![a-z0-9])(?:" + "|".join(words) + ")", text):
+                return emoji
     return "🎉"
 
 
-def format_event_card(row, today):
-    bucket, start, end = classify_event(row, today)
+def dedupe_events(events):
+    """Membuang event ganda (judul ringkas dan tanggal sama)."""
+
+    seen, result = set(), []
+    for row in events:
+        key = (normalize_text(get_display_title(row)), normalize_text(get_event_date(row)))
+        if key not in seen:
+            seen.add(key)
+            result.append(row)
+    return result
+
+
+# =========================================================
+# FORMAT PESAN EVENT (dipakai oleh Daftar Event, Cari Event,
+# dan event terkait destinasi agar tampilannya konsisten)
+# =========================================================
+
+SEPARATOR = "\n\n━━━━━━━━━━━━━━\n\n"
+
+
+def format_event_card(row, now):
+    status, start, end = get_event_status(row, now)
 
     title = escape(get_display_title(row))
     location = escape(get_display_location(row))
     description = escape(shorten_description(get_event_description(row)))
-    date_text = (
-        format_date_range(start, end)
-        or (get_event_date(row) if get_event_date(row) != "-" else None)
-        or "Tanggal belum tersedia"
-    )
+    tanggal = escape(format_date_indonesia(start, end))
 
     message = (
-        f"<b>{STATUS_LABEL[bucket]}</b>\n"
-        f"{get_event_emoji(row)} <b>{title}</b>\n\n"
-        f"📅  <b>{escape(date_text)}</b>\n"
-        f"📍  {location}\n\n"
-        f"<blockquote>{description}</blockquote>"
+        f"<b>{STATUS_LABEL[status]}</b>\n"
+        f"{get_event_emoji(row)} <b>{title}</b>\n"
+        f"📅 {tanggal}\n"
+        f"📍 {location}\n"
+        f"{description}\n"
     )
 
     url = get_event_url(row)
     if url != "-":
-        message += f"\n🔗 <a href=\"{escape(url, quote=True)}\">Baca selengkapnya ›</a>"
+        message += f"🔗 <a href=\"{escape(url, quote=True)}\">Baca selengkapnya</a>"
 
-    return message
-
-
-EVENT_SEPARATOR = "\n\n┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n"
+    return message.rstrip()
 
 
 def build_messages(header, blocks, footer=""):
-    """
-    Menyusun pesan; dipecah menjadi beberapa pesan bila melebihi batas
-    panjang Telegram (4096 karakter).
-    """
+    """Menyusun pesan; dipecah bila melebihi batas panjang Telegram."""
 
-    messages = []
-    current = header
+    messages, current = [], header
 
     for index, block in enumerate(blocks):
-        piece = block + (EVENT_SEPARATOR if index < len(blocks) - 1 else "")
-        if len(current) + len(piece) > TELEGRAM_SAFE_LIMIT and current.strip():
+        piece = block + (SEPARATOR if index < len(blocks) - 1 else "")
+        if len(current) + len(piece) > MESSAGE_LIMIT and current.strip():
             messages.append(current.rstrip())
             current = ""
         current += piece
 
     if footer:
-        if len(current) + len(footer) > TELEGRAM_SAFE_LIMIT:
+        if len(current) + len(footer) > MESSAGE_LIMIT:
             messages.append(current.rstrip())
             current = ""
         current += footer
 
     if current.strip():
         messages.append(current.rstrip())
-
     return messages
 
 
-# ---------------------------------------------------------
-# Daftar Event (maks. 5, tanpa pagination)
-# ---------------------------------------------------------
+# =========================================================
+# LOGIKA DAFTAR EVENT & PENCARIAN EVENT
+# =========================================================
 
-def select_events_for_list(events, today):
+def build_event_list(events, now):
     """
-    Prioritas: 2 mendatang, 2 hari ini, 1 kemarin.
-    Slot kosong diisi dari kategori lain yang tersedia.
+    Maksimal 5 event: 2 hari ini + 3 akan datang (hari ini ditampilkan
+    lebih dulu). Slot kosong diisi event akan datang lain, lalu yang sudah
+    lewat. Tanpa pagination.
     """
 
-    buckets = {
-        BUCKET_UPCOMING: [], BUCKET_TODAY: [],
-        BUCKET_YESTERDAY: [], BUCKET_PAST: [],
-    }
-
+    groups = {UPCOMING: [], TODAY: [], YESTERDAY: [], PAST: []}
     for row in dedupe_events(events):
-        bucket, start, end = classify_event(row, today)
-        if bucket == BUCKET_UNDATED:
-            continue
-        buckets[bucket].append((start, end, row))
+        status, start, end = get_event_status(row, now)
+        if status != UNDATED:
+            groups[status].append((start, end, row))
 
-    buckets[BUCKET_UPCOMING].sort(key=lambda x: x[0])
-    buckets[BUCKET_TODAY].sort(key=lambda x: (x[0], get_event_name(x[2]).lower()))
-    buckets[BUCKET_YESTERDAY].sort(key=lambda x: get_event_name(x[2]).lower())
-    buckets[BUCKET_PAST].sort(key=lambda x: x[1], reverse=True)
+    groups[UPCOMING].sort(key=lambda item: item[0])
+    groups[TODAY].sort(key=lambda item: item[0])
+    groups[YESTERDAY].sort(key=lambda item: get_display_title(item[2]).lower())
+    groups[PAST].sort(key=lambda item: item[1], reverse=True)
 
-    quota = [(BUCKET_UPCOMING, 2), (BUCKET_TODAY, 2), (BUCKET_YESTERDAY, 1)]
+    rows = {status: [item[2] for item in items] for status, items in groups.items()}
 
-    selected, used = [], set()
+    selected = rows[TODAY][:MAX_TODAY] + rows[UPCOMING][:MAX_UPCOMING]
+    chosen = {id(row) for row in selected}
 
-    for name, limit in quota:
-        for item in buckets[name][:limit]:
-            selected.append(item[2])
-            used.add(id(item[2]))
+    leftovers = (
+        rows[UPCOMING][MAX_UPCOMING:] + rows[TODAY][MAX_TODAY:]
+        + rows[YESTERDAY] + rows[PAST]
+    )
+    for row in leftovers:
+        if len(selected) >= MAX_EVENT_LIST:
+            break
+        if id(row) not in chosen:
+            selected.append(row)
+            chosen.add(id(row))
 
-    # Isi slot kosong dari kategori lain
-    for name in (BUCKET_UPCOMING, BUCKET_TODAY, BUCKET_YESTERDAY, BUCKET_PAST):
-        for item in buckets[name]:
-            if len(selected) >= MAX_EVENT_LIST:
-                break
-            if id(item[2]) not in used:
-                selected.append(item[2])
-                used.add(id(item[2]))
-
-    selected = selected[:MAX_EVENT_LIST]
-
-    order = {
-        BUCKET_TODAY: 0, BUCKET_UPCOMING: 1,
-        BUCKET_YESTERDAY: 2, BUCKET_PAST: 3,
-    }
-    selected.sort(key=lambda r: order[classify_event(r, today)[0]])
-    return selected
+    return selected[:MAX_EVENT_LIST]
 
 
-# ---------------------------------------------------------
-# Pencarian event
-# ---------------------------------------------------------
+def search_events(events, keyword, now):
+    """
+    Cocok bila semua kata kunci ada pada judul, tanggal, lokasi, kategori,
+    atau deskripsi. Jika tidak ada yang cocok penuh, ditampilkan yang
+    cocok sebagian terbanyak.
+    """
 
-def search_events(events, keyword, today):
     tokens = normalize_text(keyword).split()
     if not tokens:
         return []
 
     indexed = []
     for row in dedupe_events(events):
-        bucket, start, end = classify_event(row, today)
-        haystack = normalize_text(" ".join([
+        status, start, end = get_event_status(row, now)
+        text = normalize_text(" ".join([
             get_display_title(row),
             get_event_date(row),
-            format_date_range(start, end) or "",
+            format_date_indonesia(start, end),
             get_event_location(row),
             get_event_category(row),
             get_event_description(row),
         ]))
-        indexed.append((row, bucket, start, end, haystack))
+        indexed.append((row, status, start, end, text))
 
     hits = [item for item in indexed if all(t in item[4] for t in tokens)]
 
-    # Jika kata kunci majemuk tidak ada yang cocok penuh,
-    # tampilkan yang cocok sebagian (urut dari yang paling banyak cocok).
     if not hits and len(tokens) > 1:
-        scored = [
-            (sum(t in item[4] for t in tokens), item) for item in indexed
-        ]
-        best = max((s for s, _ in scored), default=0)
-        if best > 0:
-            hits = [item for s, item in scored if s == best]
+        scores = [(sum(t in item[4] for t in tokens), item) for item in indexed]
+        best = max((score for score, _ in scores), default=0)
+        if best:
+            hits = [item for score, item in scores if score == best]
 
-    def sort_key(item):
-        _, bucket, start, end, _ = item
-        if bucket in (BUCKET_TODAY, BUCKET_UPCOMING):
-            return (0, start)
-        if bucket in (BUCKET_YESTERDAY, BUCKET_PAST):
+    def order(item):
+        _, status, start, end, _ = item
+        if status in (TODAY, UPCOMING):
+            return (0, start.toordinal())
+        if status in (YESTERDAY, PAST):
             return (1, -end.toordinal())
         return (2, 0)
 
-    hits.sort(key=sort_key)
-    return [item[0] for item in hits]
+    return [item[0] for item in sorted(hits, key=order)]
 
 
 # =========================================================
-# 5. LOGIKA DESTINASI
+# LOGIKA DESTINASI: DATA & KATEGORI
 # =========================================================
 
 def get_destination_name(row):
@@ -1112,31 +1079,25 @@ def get_destination_address(row):
     return get_value(row, ["address", "alamat", "lokasi"])
 
 
-def get_destination_category_raw(row):
-    return get_value(row, ["categoryname", "kategori", "category"])
-
-
 def get_destination_description(row):
-    return get_value(row, [
-        "description", "deskripsi", "ringkasan", "summary", "about",
-    ])
+    return get_value(row, ["description", "deskripsi", "ringkasan", "summary", "about"])
 
 
 CATEGORY_RULES = [
     ("🏖️ Pantai", ["pantai", "beach", "pesisir", "laguna", "muara"]),
     ("🏡 Desa Wisata", ["desa wisata", "kampung wisata", "kampung", "desa"]),
-    ("☕ Kuliner & Tempat Nongkrong", [
-        "cafe", "café", "kafe", "coffee", "kopi", "resto", "restoran",
-        "restaurant", "warung", "kuliner", "makan", "kedai", "angkringan",
-        "nongkrong", "bakso", "sate", "soto", "bakery", "dapur",
+    ("💦 Wisata Air", [
+        "curug", "air terjun", "waterfall", "waduk", "reservoir",
+        "bendungan", "telaga", "danau", "lake", "embung", "sungai",
+        "river", "kolam", "tubing", "rafting", "arung jeram",
+        "water", "tirta", "sendang", "banyu", "mata air",
     ]),
     ("⛰️ Panorama", [
         "puncak", "view", "bukit", "panorama", "menoreh", "sunset",
         "sunrise", "pandang", "kaki langit", "negeri di atas awan",
     ]),
     ("🌿 Wisata Alam", [
-        "curug", "air terjun", "waduk", "telaga", "danau", "embung",
-        "hutan", "sungai", "kebun", "goa", "gua", "alam", "taman",
+        "hutan", "kebun", "goa", "gua", "alam", "taman", "cagar",
     ]),
 ]
 DEFAULT_CATEGORY = "🌿 Wisata Alam"
@@ -1144,10 +1105,9 @@ DEFAULT_CATEGORY = "🌿 Wisata Alam"
 
 def _match_category(text):
     text = normalize_text(text)
-    if not text:
-        return None
     for category, words in CATEGORY_RULES:
         for word in words:
+            # kata kunci harus berada di awal kata ("view" bukan "review")
             if re.search(rf"(?<![a-z0-9]){re.escape(normalize_text(word))}", text):
                 return category
     return None
@@ -1155,112 +1115,101 @@ def _match_category(text):
 
 def classify_destination(row):
     """
-    Kategori ditentukan dari kolom kategori dataset lebih dulu
-    (mis. 'Kafe', 'Pantai'); jika tidak cukup informatif, dari nama
-    destinasi. Alamat sengaja tidak dipakai karena sering memuat
-    kata seperti 'Jl. Pantai ...' yang menyesatkan.
+    Kategori dari kolom kategori dataset (categoryName) lebih dulu, lalu
+    dari nama destinasi. Alamat sengaja tidak dipakai karena sering memuat
+    kata seperti "Jl. Pantai ..." yang menyesatkan.
     """
 
     return (
-        _match_category(get_destination_category_raw(row))
+        _match_category(get_value(row, ["categoryname", "kategori", "category"]))
         or _match_category(get_destination_name(row))
         or DEFAULT_CATEGORY
     )
 
 
-# Kata umum tidak boleh menjadi dasar kecocokan fuzzy; kalau tidak,
-# "pantai glagah" akan dianggap mirip dengan "Pantai Mlarangan Asri".
-GENERIC_TOKENS = {
+def get_category_destinations(destinations, category):
+    return [row for row in destinations if classify_destination(row) == category]
+
+
+# =========================================================
+# LOGIKA DESTINASI: PENCARIAN
+# =========================================================
+
+# Kata umum tidak boleh menjadi dasar kemiripan (typo); kalau tidak,
+# "pantai glagah" akan dianggap mirip "Pantai Mlarangan Asri".
+GENERIC_WORDS = {
     "pantai", "wisata", "desa", "kampung", "waduk", "curug", "bukit",
     "puncak", "taman", "kebun", "goa", "gua", "kafe", "cafe", "warung",
     "kopi", "resto", "rumah", "makan", "kedai", "the", "di", "dan",
     "kulon", "progo", "kulonprogo", "obyek", "objek",
 }
-FUZZY_TOKEN_MIN = 0.8
-FUZZY_MAX_SCORE = 0.84  # selalu di bawah STRONG_SCORE
-
-
-def _fuzzy_score(keyword_norm, title_norm):
-    """
-    Toleransi typo per kata khas: setiap kata khas pada kata kunci
-    harus mirip dengan salah satu kata pada judul.
-    """
-
-    k_tokens = [t for t in keyword_norm.split() if t not in GENERIC_TOKENS]
-    t_tokens = title_norm.split()
-    if not k_tokens or not t_tokens:
-        return 0.0
-
-    best_scores = []
-    for k in k_tokens:
-        if len(k) < 4:  # kata terlalu pendek: tanpa toleransi typo
-            return 0.0
-        best = max(SequenceMatcher(None, k, t).ratio() for t in t_tokens)
-        if best < FUZZY_TOKEN_MIN:
-            return 0.0
-        best_scores.append(best)
-
-    return min(sum(best_scores) / len(best_scores), FUZZY_MAX_SCORE)
-
-
 STRONG_SCORE = 0.85
 
 
-def score_destination(keyword_norm, title_norm):
-    """Skor kecocokan 0..1 antara kata kunci dan judul destinasi."""
+def _fuzzy_score(keyword, title):
+    """Toleransi typo per kata khas (bukan kata umum)."""
 
-    if not keyword_norm or not title_norm:
+    key_words = [w for w in keyword.split() if w not in GENERIC_WORDS]
+    title_words = title.split()
+    if not key_words or not title_words:
         return 0.0
 
-    k_compact = keyword_norm.replace(" ", "")
-    t_compact = title_norm.replace(" ", "")
+    scores = []
+    for word in key_words:
+        if len(word) < 4:
+            return 0.0
+        best = max(SequenceMatcher(None, word, t).ratio() for t in title_words)
+        if best < 0.8:
+            return 0.0
+        scores.append(best)
 
-    if keyword_norm == title_norm or k_compact == t_compact:
+    return min(sum(scores) / len(scores), 0.84)  # selalu di bawah STRONG_SCORE
+
+
+def score_destination(keyword, title):
+    """Skor kecocokan 0..1 antara kata kunci dan judul destinasi."""
+
+    if not keyword or not title:
+        return 0.0
+
+    key_compact = keyword.replace(" ", "")
+    title_compact = title.replace(" ", "")
+    key_words = keyword.split()
+
+    if keyword == title or key_compact == title_compact:
         return 1.0
-    if title_norm.startswith(keyword_norm):
+    if title.startswith(keyword):
         return 0.95
-
-    k_tokens = keyword_norm.split()
-    t_tokens = title_norm.split()
-
-    if re.search(rf"(?<![a-z0-9]){re.escape(keyword_norm)}(?![a-z0-9])", title_norm):
+    if re.search(rf"(?<![a-z0-9]){re.escape(keyword)}(?![a-z0-9])", title):
         return 0.9
-    if all(token in t_tokens for token in k_tokens):
+    if all(word in title.split() for word in key_words):
         return 0.88
-    if len(k_compact) >= 4 and k_compact in t_compact:
+    if len(key_compact) >= 4 and key_compact in title_compact:
         return 0.86
-    if all(token in title_norm for token in k_tokens) and len(k_compact) >= 4:
+    if len(key_compact) >= 4 and all(word in title for word in key_words):
         return 0.8
-
-    return _fuzzy_score(keyword_norm, title_norm)
+    return _fuzzy_score(keyword, title)
 
 
 def find_destinations(keyword, destinations, category=None):
     """
-    Mencari di SELURUH destinasi (kategori hanya memberi sedikit
-    prioritas, tidak pernah menyaring). Mengembalikan daftar
-    (skor, row) terurut dari yang paling cocok.
+    Mencari di SELURUH destinasi. Kategori hanya memberi sedikit prioritas
+    dan tidak pernah menyaring. Hasil: [(skor, row)] dari yang terbaik.
     """
 
-    keyword_norm = normalize_text(keyword)
-    if not keyword_norm:
-        return []
-
+    keyword = normalize_text(keyword)
     results = []
+
     for row in destinations:
-        title_norm = normalize_text(get_destination_name(row))
-        score = score_destination(keyword_norm, title_norm)
+        title = normalize_text(get_destination_name(row))
+        score = score_destination(keyword, title)
         if score <= 0:
             continue
-
-        adjusted = score
         if category and classify_destination(row) == category:
-            adjusted += 0.02
-        adjusted -= len(title_norm) * 1e-5  # judul lebih pendek = lebih tepat
-        results.append((adjusted, row))
+            score += 0.02
+        results.append((score - len(title) * 1e-5, row))
 
-    results.sort(key=lambda x: x[0], reverse=True)
-    return results
+    return sorted(results, key=lambda item: item[0], reverse=True)
 
 
 def is_ambiguous(results):
@@ -1269,88 +1218,64 @@ def is_ambiguous(results):
     if len(results) < 2:
         return False
     top, second = results[0][0], results[1][0]
-    return top < 0.99 and second >= STRONG_SCORE and (top - second) < 0.04
+    return top < 0.99 and second >= STRONG_SCORE and top - second < 0.04
 
 
-def get_destinations_by_category(destinations, category):
-    return [r for r in destinations if classify_destination(r) == category]
+# =========================================================
+# LOGIKA DESTINASI: DETAIL
+# =========================================================
 
-
-# ---------------------------------------------------------
-# Detail destinasi
-# ---------------------------------------------------------
-
+# (emoji judul, emoji deskripsi, emoji event)
 THEMES = {
-    "pantai": "🏖️",
-    "alam": "🌿",
-    "desa": "🏡",
-    "kuliner": "☕",
-    "panorama": "⛰️",
+    "🏖️ Pantai": ("🏖️", "🌴", "🎉"),
+    "🌿 Wisata Alam": ("🌿", "🍃", "🎉"),
+    "🏡 Desa Wisata": ("🏡", "🌾", "🎊"),
+    "💦 Wisata Air": ("💦", "🌊", "🎉"),
+    "⛰️ Panorama": ("⛰️", "🌄", "🎉"),
 }
-
-
-def get_theme_emoji(category):
-    category = category.lower()
-    for key, emoji in THEMES.items():
-        if key in category:
-            return emoji
-    return "🌿"
-
-
-def _is_google_maps_url(url):
-    url = url.lower()
-    return url.startswith("http") and any(
-        marker in url for marker in (
-            "google.com/maps", "maps.google", "maps.app.goo.gl",
-            "goo.gl/maps", "g.page",
-        )
-    )
 
 
 def get_maps_url(row):
     """
-    Urutan: link Google Maps dari dataset -> koordinat dataset ->
-    pencarian Google Maps dari nama + alamat (hanya bila keduanya ada).
-    Mengembalikan None bila lokasi tidak dapat ditentukan.
+    Urutan: tautan Google Maps dari dataset, koordinat dataset, lalu
+    pencarian dari nama + alamat (hanya bila keduanya tersedia).
     """
 
     for column in ("google_maps_url", "maps_url", "link_maps", "url", "placeurl", "place_url"):
-        value = row.get(column, "")
-        if value and _is_google_maps_url(value):
-            return value
+        value = row.get(column, "").lower()
+        if value.startswith("http") and any(
+            marker in value for marker in
+            ("google.com/maps", "maps.google", "maps.app.goo.gl", "goo.gl/maps", "g.page")
+        ):
+            return row[column]
 
     lat = get_value(row, ["latitude", "lat"])
     lng = get_value(row, ["longitude", "lng", "lon", "long"])
 
-    if lat == "-" or lng == "-":
-        located = row.get("location", "")
+    if "-" in (lat, lng):
         match = re.search(
             r"lat\D{0,6}(-?\d+\.\d+).*?(?:lng|lon)\D{0,6}(-?\d+\.\d+)",
-            located, re.IGNORECASE | re.DOTALL,
+            row.get("location", ""), re.IGNORECASE | re.DOTALL,
         )
         if match:
             lat, lng = match.groups()
 
     try:
-        float(lat)
-        float(lng)
+        float(lat), float(lng)
         return f"https://www.google.com/maps/search/?api=1&query={lat},{lng}"
     except ValueError:
         pass
 
-    name = get_destination_name(row)
-    address = get_destination_address(row)
-    if name != "-" and address != "-":
-        query = quote(f"{name}, {address}")
-        return f"https://www.google.com/maps/search/?api=1&query={query}"
-
+    name, address = get_destination_name(row), get_destination_address(row)
+    if "-" not in (name, address):
+        return "https://www.google.com/maps/search/?api=1&query=" + quote(f"{name}, {address}")
     return None
 
 
-def get_related_events(destination, events, today):
+def get_related_events(destination, events, now):
     """
-    Event hari ini / mendatang yang benar-benar menyebut nama
-    destinasi pada lokasi atau judul event (pencocokan kata utuh).
+    Event hari ini/mendatang yang menyebut nama destinasi pada lokasi atau
+    judul (pencocokan kata utuh), agar event tidak asal dikaitkan.
     """
 
     name = normalize_text(get_destination_name(destination))
@@ -1361,443 +1286,455 @@ def get_related_events(destination, events, today):
     related = []
 
     for row in dedupe_events(events):
-        bucket, start, end = classify_event(row, today)
-        if bucket not in (BUCKET_TODAY, BUCKET_UPCOMING):
+        status, start, _ = get_event_status(row, now)
+        if status not in (TODAY, UPCOMING):
             continue
-
         if pattern.search(normalize_text(get_event_location(row))) or \
                 pattern.search(normalize_text(get_display_title(row))):
             related.append((start, row))
 
-    related.sort(key=lambda x: x[0])
-    return [row for _, row in related]
+    return [row for _, row in sorted(related, key=lambda item: item[0])]
 
 
-def format_destination_detail(destination, events, today):
+def format_destination_detail(destination, events, now):
+    """Detail destinasi; semua informasi berasal dari dataset."""
+
     name = get_destination_name(destination)
     address = get_destination_address(destination)
     category = classify_destination(destination)
-    emoji = get_theme_emoji(category)
+    title_emoji, description_emoji, event_emoji = THEMES.get(category, THEMES[DEFAULT_CATEGORY])
 
-    category_label = collapse_spaces(strip_emoji(category))
-
-    lines = [
-        f"{emoji} <b>{escape(name)}</b>",
-        f"<i>{escape(category_label)}</i>",
-        LINE,
-        "",
-        f"📍  {escape(address) if address != '-' else 'Alamat belum tersedia'}",
-    ]
+    message = f"<b>{title_emoji} {escape(name)}</b>\n\n"
+    message += f"📍 {escape(address) if address != '-' else 'Alamat belum tersedia'}\n"
 
     maps_url = get_maps_url(destination)
     if maps_url:
-        lines.append(
-            f"🗺️  <a href=\"{escape(maps_url, quote=True)}\">Buka di Google Maps ›</a>"
-        )
+        message += f"<a href=\"{escape(maps_url, quote=True)}\">🗺️ Lihat Google Maps</a>\n"
 
     description = clean_description(get_destination_description(destination))
     if description:
-        lines += [
-            "",
-            f"<blockquote>{escape(shorten_sentence_text(description, 350))}</blockquote>",
-        ]
+        short = shorten(first_sentences(description, 220, enough=110), 220)
+        message += f"\n{description_emoji} {escape(short)}\n"
 
-    message = "\n".join(lines)
-
-    related = get_related_events(destination, events or [], today) if events else []
+    related = get_related_events(destination, events, now) if events else []
     if related:
-        cards = [
-            format_event_card(row, today)
-            for row in related[:MAX_RELATED_EVENTS]
-        ]
+        cards = [format_event_card(row, now) for row in related[:MAX_RELATED_EVENTS]]
+        message += f"\n<b>{event_emoji} Event di Destinasi</b>\n\n" + SEPARATOR.join(cards)
+
+    return message.rstrip()
+
+
+# =========================================================
+# PENGINGAT EVENT H-1 & SCHEDULER
+# (scheduler.py yang menjadwalkan dan mengirim; bot.py yang
+# menyediakan isi pesannya agar tampilannya sama dengan menu)
+# =========================================================
+
+SCHEDULER = None  # modul scheduler.py, diisi oleh main()
+
+
+def load_scheduler():
+    """Memuat scheduler.py; bot tetap jalan bila file tidak ditemukan."""
+
+    for root in (BASE_DIR, BASE_DIR.parent):
+        if str(root) not in sys.path:
+            sys.path.append(str(root))
+
+    errors = []
+    for name in ("scraping.scheduler", "scheduler"):
+        try:
+            return importlib.import_module(name)
+        except Exception as error:  # noqa: BLE001
+            errors.append(f"{name}: {error}")
+
+    log.warning("scheduler.py tidak dapat dimuat, notifikasi nonaktif. %s", " | ".join(errors))
+    return None
+
+
+def format_reminder(row, start, end):
+    """Pesan pengingat H-1."""
+
+    message = (
+        "🔔 <b>PENGINGAT EVENT H-1</b>\n\n"
+        "Halo, Sobat WisataKP! 👋\n\n"
+        "Jangan sampai ketinggalan event seru besok!\n\n"
+        f"📌 <b>Nama Event:</b> {escape(get_display_title(row))}\n"
+        f"📅 <b>Tanggal:</b> {escape(format_date_indonesia(start, end))}\n"
+        f"📍 <b>Lokasi:</b> {escape(get_display_location(row))}\n\n"
+        "ℹ️ <b>Tentang Event:</b>\n"
+        f"{escape(shorten_description(get_event_description(row)))}\n\n"
+    )
+
+    url = get_event_url(row)
+    if url != "-":
         message += (
-            f"\n\n{LINE}\n"
-            "🎉 <b>EVENT DI DESTINASI INI</b>\n\n"
-            + EVENT_SEPARATOR.join(cards)
+            "🔗 <b>Informasi selengkapnya:</b> "
+            f"<a href=\"{escape(url, quote=True)}\">Baca di sini</a>\n\n"
         )
 
-    return message
+    return message + "Yuk, catat tanggalnya dan nikmati keseruannya! ✨"
+
+
+def get_h1_reminders():
+    """
+    Event yang dimulai besok, sebagai [(id_event, pesan_html)].
+    Dipanggil scheduler; id_event dipakai agar satu event hanya diingatkan sekali.
+    """
+
+    events = load_events()
+    if not events:
+        return []
+
+    tomorrow = today() + timedelta(days=1)
+    reminders = []
+
+    for row in dedupe_events(events):
+        start, end = parse_date_range(get_event_date(row))
+        if start != tomorrow:
+            continue
+
+        url = get_event_url(row)
+        event_id = (
+            url.lower().rstrip("/") if url != "-"
+            else f"{normalize_text(get_display_title(row))}|{start.isoformat()}"
+        )
+        reminders.append((event_id, format_reminder(row, start, end)))
+
+    return reminders
+
+
+def set_subscription(update, active):
+    """Daftarkan / hapus chat dari penerima pengingat."""
+
+    if SCHEDULER is None or update.effective_chat is None:
+        return
+    chat_id = update.effective_chat.id
+    if active:
+        SCHEDULER.add_subscriber(chat_id)
+    else:
+        SCHEDULER.remove_subscriber(chat_id)
+
+
+async def post_init(application):
+    if SCHEDULER is None or os.getenv("DISABLE_SCHEDULER") == "1":
+        log.info("Scheduler tidak dijalankan.")
+        return
+    await SCHEDULER.start_scheduler(application, reminder_callback=get_h1_reminders)
+
+
+async def post_shutdown(application):
+    if SCHEDULER is not None:
+        await SCHEDULER.stop_scheduler(application)
 
 
 # =========================================================
-# 6. HELPER PENGIRIMAN PESAN TELEGRAM
+# PENGIRIMAN PESAN TELEGRAM
 # =========================================================
 
-def _strip_tags(text):
-    return re.sub(r"<[^>]+>", "", text)
-
-
-async def reply_html(update, text, reply_markup=MENU, preview=False):
-    """reply_text HTML dengan retry sekali untuk timeout dan fallback parse."""
-
-    kwargs = {"parse_mode": ParseMode.HTML, "reply_markup": reply_markup}
-    if not preview:
-        kwargs.update(PREVIEW_KW)
+async def reply(update, text, markup=MENU):
+    """Kirim pesan HTML; coba ulang sekali saat timeout."""
 
     for attempt in (1, 2):
         try:
-            return await update.effective_message.reply_text(text, **kwargs)
+            return await update.effective_message.reply_text(
+                text, parse_mode=ParseMode.HTML, reply_markup=markup, **NO_PREVIEW
+            )
         except BadRequest as error:
-            if "parse entities" in str(error).lower():
-                log.warning("Gagal parse HTML, kirim sebagai teks biasa.")
-                return await update.effective_message.reply_text(
-                    _strip_tags(text), reply_markup=reply_markup
-                )
-            raise
+            if "parse entities" not in str(error).lower():
+                raise
+            log.warning("Gagal parse HTML, dikirim sebagai teks biasa.")
+            return await update.effective_message.reply_text(
+                re.sub(r"<[^>]+>", "", text), reply_markup=markup
+            )
         except (TimedOut, NetworkError):
             if attempt == 2:
                 raise
             log.warning("Timeout saat mengirim pesan, mencoba ulang...")
 
 
-async def safe_edit(query, text, reply_markup=None):
-    """edit_message_text yang mengabaikan 'Message is not modified'."""
+async def safe_edit(query, text, markup=None):
+    """Edit pesan; 'Message is not modified' diabaikan."""
 
     try:
         await query.edit_message_text(
-            text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=reply_markup,
-            **PREVIEW_KW,
+            text, parse_mode=ParseMode.HTML, reply_markup=markup, **NO_PREVIEW
         )
     except BadRequest as error:
-        if "message is not modified" in str(error).lower():
-            log.info("Pesan tidak berubah, edit dilewati.")
-            return
-        raise
-
-
-def set_mode(context, mode):
-    context.user_data["mode"] = mode
-
-
-def get_mode(context):
-    return context.user_data.get("mode", MODE_MENU)
+        if "message is not modified" not in str(error).lower():
+            raise
+        log.info("Pesan tidak berubah, edit dilewati.")
 
 
 # =========================================================
-# 7. HANDLER MENU & STATE PERCAKAPAN
+# HANDLER: START & MENU UTAMA
 # =========================================================
-
-# ---------------------------------------------------------
-# /start dan menu utama
-# ---------------------------------------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    set_mode(context, MODE_MENU)
-    context.user_data.pop("wisata_category", None)
+    context.user_data["mode"] = None
+    set_subscription(update, True)
 
-    await reply_html(
+    await reply(
         update,
-        "🌴 <b>Selamat datang di WisataKP</b> 🌴\n"
-        "<i>Teman jalan-jalanmu di Kulon Progo</i>\n\n"
-        f"{LINE}\n\n"
-        "Mau ke mana hari ini?\n\n"
-        "🏖️  Pantai yang memukau\n"
-        "🌿  Wisata alam yang menenangkan\n"
-        "🏡  Desa wisata yang hangat\n"
-        "☕  Kuliner &amp; tempat nongkrong\n"
-        "⛰️  Panorama pegunungan\n"
-        "🎉  Event seru yang sedang berlangsung\n\n"
-        f"{LINE}\n"
-        "👇 <b>Pilih menu di bawah untuk mulai</b>",
+        "👋 <b>Selamat datang di WisataKP!</b>\n\n"
+        "Temukan informasi event dan destinasi wisata "
+        "di Kulon Progo.\n\n"
+        "🌊 Jelajahi pantai\n"
+        "🌿 Temukan wisata alam\n"
+        "🏡 Kunjungi desa wisata\n"
+        "🎉 Cari event menarik\n\n"
+        "🔔 Kamu akan mendapat pengingat sehari sebelum event berlangsung. "
+        "Ketik /berhenti untuk menghentikannya.\n\n"
+        "Silakan pilih menu berikut:",
+    )
+
+
+async def berhenti(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    set_subscription(update, False)
+    await reply(
+        update,
+        "🔕 Pengingat event dihentikan.\n"
+        "Ketik /start jika ingin mengaktifkannya lagi.",
     )
 
 
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    set_mode(context, MODE_MENU)
-    await reply_html(
+    context.user_data["mode"] = None
+
+    await reply(
         update,
-        "🌿 <b>MENU UTAMA WISATAKP</b>\n"
-        f"{LINE}\n\n"
-        "📅  Lihat daftar event terbaru\n"
-        "🔍  Cari event favoritmu\n"
-        "🏞️  Jelajahi destinasi wisata\n"
-        "❓  Panduan penggunaan\n\n"
-        "👇 <i>Silakan pilih salah satu menu.</i>",
+        "🌿 <b>MENU UTAMA WISATAKP</b>\n\n"
+        "Silakan pilih fitur yang ingin digunakan.",
     )
 
 
-# ---------------------------------------------------------
-# Daftar Event
-# ---------------------------------------------------------
+# =========================================================
+# HANDLER: DAFTAR EVENT
+# =========================================================
 
 async def daftar_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    set_mode(context, MODE_MENU)
+    context.user_data["mode"] = None
 
-    events = EVENTS.get()
+    events = load_events()
     if events is None:
-        await reply_html(update, MSG_DATA_EVENT_ERROR)
+        await reply(update, MSG_EVENT_ERROR)
         return
 
-    today = today_wib()
-    selected = select_events_for_list(events, today)
+    now = today()
+    selected = build_event_list(events, now)
 
     if not selected:
-        await reply_html(
-            update,
-            "📭 <b>Belum ada event</b>\n\n"
-            "<i>Belum ada event yang dapat ditampilkan saat ini. "
-            "Coba lagi nanti ya!</i>",
-        )
+        await reply(update, "📅 Belum ada event yang dapat ditampilkan.")
         return
 
-    blocks = [format_event_card(row, today) for row in selected]
-    header = (
-        "🎉 <b>EVENT KULON PROGO</b>\n"
-        f"<i>{len(blocks)} event pilihan untukmu</i>\n"
-        f"{LINE}\n\n"
-    )
-    messages = build_messages(header, blocks)
-
-    for text in messages:
-        await reply_html(update, text)
+    cards = [format_event_card(row, now) for row in selected]
+    for message in build_messages("📅 <b>EVENT KULON PROGO</b>\n\n", cards):
+        await reply(update, message)
 
 
-# ---------------------------------------------------------
-# Cari Event
-# ---------------------------------------------------------
+# =========================================================
+# HANDLER: CARI EVENT
+# =========================================================
 
 async def cari_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    set_mode(context, MODE_EVENT_SEARCH)
+    context.user_data["mode"] = MODE_SEARCH
 
-    await reply_html(
+    await reply(
         update,
-        "🔍 <b>CARI EVENT</b>\n"
-        f"{LINE}\n\n"
-        "Ketik nama event, lokasi, kategori, atau kata kunci "
-        "yang ingin kamu cari.\n\n"
-        "💡 <b>Contoh:</b>  <code>festival</code>  •  <code>pantai</code>  •  "
-        "<code>seni</code>  •  <code>olahraga</code>\n\n"
-        "<i>Kamu bisa mencari berkali-kali. "
-        "Ketik <b>menu</b> atau pilih menu lain untuk keluar.</i>",
+        "🔍 <b>Cari Event</b>\n\n"
+        "Ketik nama event, lokasi, kategori, "
+        "atau kata kunci yang ingin kamu cari.\n\n"
+        "Contoh: festival, pantai, seni, olahraga.\n\n"
+        "Kamu bisa mencari berkali-kali. "
+        "Ketik <b>menu</b> untuk kembali.",
     )
 
 
-async def proses_pencarian_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Mode TETAP event_search agar pencarian dapat diulang.
+async def proses_pencarian(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Mode tetap MODE_SEARCH agar pengguna bisa langsung mencari lagi.
     keyword = update.message.text.strip()
 
-    events = EVENTS.get()
+    events = load_events()
     if events is None:
-        await reply_html(update, MSG_DATA_EVENT_ERROR)
+        await reply(update, MSG_EVENT_ERROR)
         return
 
-    today = today_wib()
-    hasil = search_events(events, keyword, today)
+    now = today()
+    hasil = search_events(events, keyword, now)
 
     if not hasil:
-        await reply_html(
+        await reply(
             update,
-            "🔎 <b>HASIL PENCARIAN</b>\n"
-            f"{LINE}\n"
+            "🔎 <b>HASIL PENCARIAN</b>\n\n"
             f"Kata kunci: <b>{escape(keyword)}</b>\n\n"
-            "😕 <b>Event tidak ditemukan</b>\n"
-            "<i>Coba kata kunci lain, misalnya nama kegiatan atau lokasi.</i>",
+            "Event tidak ditemukan.\n"
+            "Coba kata kunci lain.",
         )
         return
 
     header = (
         "🔎 <b>HASIL PENCARIAN</b>\n"
-        f"{LINE}\n"
         f"Kata kunci: <b>{escape(keyword)}</b>\n"
-        f"✨ Ditemukan <b>{len(hasil)}</b> event\n\n"
+        f"Ditemukan {len(hasil)} event\n\n\n"
     )
 
     footer = ""
     if len(hasil) > MAX_SEARCH_RESULTS:
         footer = (
-            f"\n\n📌 <i>Menampilkan {MAX_SEARCH_RESULTS} dari {len(hasil)} hasil. "
-            "Gunakan kata kunci yang lebih spesifik untuk mempersempit.</i>"
+            f"\n\n<i>Menampilkan {MAX_SEARCH_RESULTS} dari {len(hasil)} hasil. "
+            "Gunakan kata kunci yang lebih spesifik.</i>"
         )
-    footer += "\n\n💬 <i>Ketik kata kunci lain untuk mencari lagi.</i>"
+    footer += "\n\n<i>Ketik kata kunci lain untuk mencari lagi.</i>"
 
-    blocks = [format_event_card(row, today) for row in hasil[:MAX_SEARCH_RESULTS]]
+    cards = [format_event_card(row, now) for row in hasil[:MAX_SEARCH_RESULTS]]
+    for message in build_messages(header, cards, footer):
+        await reply(update, message)
 
-    for text in build_messages(header, blocks, footer):
-        await reply_html(update, text)
 
+# =========================================================
+# HANDLER: WISATA
+# =========================================================
 
-# ---------------------------------------------------------
-# Wisata
-# ---------------------------------------------------------
-
-def build_category_keyboard(selected=None):
-    rows = []
-    for index, category in enumerate(KATEGORI_WISATA):
-        label = f"✅ {category}" if category == selected else category
-        rows.append([
-            InlineKeyboardButton(label, callback_data=f"wiscategory_{index}")
-        ])
-    return InlineKeyboardMarkup(rows)
+def category_keyboard(selected=None):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            f"✅ {category}" if category == selected else category,
+            callback_data=f"wiscategory_{index}",
+        )]
+        for index, category in enumerate(KATEGORI_WISATA)
+    ])
 
 
 async def menu_wisata(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    set_mode(context, MODE_WISATA_MENU)
+    context.user_data["mode"] = MODE_WISATA_MENU
     context.user_data["wisata_category"] = None
 
-    await reply_html(
+    await reply(
         update,
-        "🏞️ <b>JELAJAHI WISATA KULON PROGO</b>\n"
-        f"{LINE}\n\n"
-        "1️⃣  Pilih kategori di bawah\n"
-        "2️⃣  Ketik nama destinasi yang ingin kamu cari\n\n"
-        "👇 <i>Mulai dari kategori favoritmu</i>",
-        reply_markup=build_category_keyboard(),
+        "🏞️ <b>JELAJAH WISATA KULON PROGO</b>\n\n"
+        "Pilih kategori wisata yang ingin kamu jelajahi.",
+        markup=category_keyboard(),
     )
 
 
-async def wisata_category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def wisata_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Tombol kategori: pengguna memilih kategori, lalu mengetik nama wisata."""
+
     query = update.callback_query
     await query.answer()
 
     try:
-        index = int(query.data.split("_")[-1])
-        category = KATEGORI_WISATA[index]
+        category = KATEGORI_WISATA[int(query.data.split("_")[-1])]
     except (ValueError, IndexError):
         return
 
-    set_mode(context, MODE_WISATA_SEARCH)
     context.user_data["wisata_category"] = category
+    context.user_data["mode"] = MODE_WISATA
 
-    destinations = DESTINATIONS.get()
+    destinations = load_destinations()
     if destinations is None:
-        await safe_edit(query, MSG_DATA_DESTINASI_ERROR, build_category_keyboard(category))
+        await safe_edit(query, MSG_DESTINASI_ERROR, category_keyboard(category))
         return
 
-    in_category = get_destinations_by_category(destinations, category)
-    examples = [get_destination_name(r) for r in in_category[:5]]
+    in_category = get_category_destinations(destinations, category)
+    examples = [get_destination_name(row) for row in in_category[:5]]
 
     examples_text = ""
     if examples:
         examples_text = (
-            f"\n\n📍 <b>Contoh destinasi</b> <i>({len(in_category)} tersedia)</i>\n"
-            + "\n".join(f"  ▫️ {escape(name)}" for name in examples)
+            f"\n\nContoh destinasi ({len(in_category)} tersedia):\n"
+            + "\n".join(f"• {escape(name)}" for name in examples)
         )
 
     await safe_edit(
         query,
-        f"<b>{escape(category)}</b>\n"
-        f"{LINE}\n\n"
-        "✍️ Ketik nama destinasi yang ingin kamu cari."
+        f"<b>{escape(category)}</b>\n\n"
+        "Silakan ketik nama destinasi wisata yang ingin kamu cari."
         f"{examples_text}\n\n"
-        "<i>Tekan kategori lain untuk berganti, "
-        "atau ketik <b>menu</b> untuk kembali.</i>",
-        build_category_keyboard(category),
+        "Ketik <b>kategori</b> untuk memilih kategori lain "
+        "atau <b>menu</b> untuk kembali ke menu utama.",
+        category_keyboard(category),
     )
-
-
-async def wisata_change_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Tombol 'Pilih kategori lain' di bawah detail destinasi."""
-
-    query = update.callback_query
-    await query.answer()
-
-    set_mode(context, MODE_WISATA_MENU)
-    context.user_data["wisata_category"] = None
-
-    await query.message.reply_text(
-        "🏞️ <b>PILIH KATEGORI WISATA</b>\n"
-        f"{LINE}\n"
-        "<i>Mau jelajah yang mana?</i>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=build_category_keyboard(),
-    )
-
-
-CHANGE_CATEGORY_KEYBOARD = InlineKeyboardMarkup([[
-    InlineKeyboardButton("🔄 Pilih kategori lain", callback_data="wischange")
-]])
 
 
 async def proses_pencarian_destinasi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyword = update.message.text.strip()
     category = context.user_data.get("wisata_category")
 
-    destinations = DESTINATIONS.get()
+    destinations = load_destinations()
     if destinations is None:
         # Dataset gagal dimuat: bukan "destinasi tidak ditemukan".
-        await reply_html(update, MSG_DATA_DESTINASI_ERROR)
+        await reply(update, MSG_DESTINASI_ERROR)
         return
 
-    results = find_destinations(keyword, destinations, category)
+    matches = find_destinations(keyword, destinations, category)
 
-    if not results:
-        await reply_html(
+    if not matches:
+        await reply(
             update,
-            "🔎 <b>Destinasi belum ditemukan</b> 🥹\n"
-            f"{LINE}\n\n"
-            "💡 <i>Coba periksa kembali nama destinasi atau gunakan nama "
-            "yang lebih singkat. Kamu bisa langsung mengetik nama lain.</i>",
+            "🔎 <b>Destinasi belum ditemukan 🥹</b>\n\n"
+            "Coba periksa kembali nama destinasi "
+            "atau gunakan nama yang lebih singkat.",
         )
         return
 
-    if is_ambiguous(results):
-        names = [get_destination_name(r) for _, r in results[:8]]
-        more = len(results) - len(names)
+    if is_ambiguous(matches):
+        names = [get_destination_name(row) for _, row in matches[:8]]
         text = (
-            f"🔎 <b>Ada beberapa yang cocok</b>\n"
-            f"{LINE}\n"
-            f"Kata kunci: <b>{escape(keyword)}</b>\n\n"
-            + "\n".join(f"  ▫️ {escape(n)}" for n in names)
+            f"🔎 Ada beberapa destinasi yang cocok dengan <b>{escape(keyword)}</b>:\n\n"
+            + "\n".join(f"• {escape(name)}" for name in names)
         )
-        if more > 0:
-            text += f"\n  ▫️ <i>...dan {more} lainnya</i>"
-        text += "\n\n👆 <i>Ketik nama lengkap salah satunya untuk melihat detailnya.</i>"
-        await reply_html(update, text)
+        if len(matches) > len(names):
+            text += f"\n• ...dan {len(matches) - len(names)} lainnya"
+        await reply(update, text + "\n\nKetik nama lengkap salah satunya untuk melihat detailnya.")
         return
 
-    best = results[0][1]
-    detail = format_destination_detail(best, EVENTS.get(), today_wib())
+    detail = format_destination_detail(matches[0][1], load_events(), today())
 
-    # Event hanya dipakai untuk bagian "event terkait"; bila dataset
-    # event gagal dimuat, detail destinasi tetap ditampilkan.
-    others = [
-        get_destination_name(r) for score, r in results[1:4]
-        if score >= STRONG_SCORE
+    similar = [
+        get_destination_name(row)
+        for score, row in matches[1:4] if score >= STRONG_SCORE
     ]
-    if others:
-        detail += (
-            "\n\n💭 <i>Mungkin juga maksudmu: "
-            + escape(", ".join(others)) + "</i>"
-        )
+    if similar:
+        detail += f"\n\n<i>Mungkin juga maksudmu: {escape(', '.join(similar))}</i>"
 
-    await reply_html(
-        update, detail, reply_markup=CHANGE_CATEGORY_KEYBOARD
-    )
+    await reply(update, detail)
 
 
-# ---------------------------------------------------------
-# Bantuan
-# ---------------------------------------------------------
+# =========================================================
+# HANDLER: BANTUAN
+# =========================================================
 
 async def bantuan(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    set_mode(context, MODE_MENU)
+    context.user_data["mode"] = None
 
-    await reply_html(
+    await reply(
         update,
-        "❓ <b>BANTUAN WISATAKP</b>\n"
-        f"{LINE}\n\n"
+        "❓ <b>BANTUAN WISATAKP</b>\n\n"
         "📅 <b>Daftar Event</b>\n"
-        "<i>Menampilkan hingga 5 event: yang akan datang, hari ini, "
-        "dan kemarin.</i>\n\n"
+        "Menampilkan hingga 5 event: 3 yang akan datang "
+        "dan 2 yang berlangsung hari ini.\n\n"
         "🔍 <b>Cari Event</b>\n"
-        "<i>Ketik nama, lokasi, kategori, atau kata kunci event. "
-        "Bisa mencari berkali-kali tanpa memilih menu lagi.</i>\n\n"
+        "Mencari event berdasarkan nama, lokasi, "
+        "kategori, atau kata kunci. Kamu bisa mencari "
+        "berkali-kali tanpa memilih menu lagi.\n\n"
         "🏞️ <b>Wisata</b>\n"
-        "<i>Pilih kategori, lalu ketik nama destinasi (boleh sebagian saja, "
-        "contoh: </i><code>glagah</code><i>). Detail lengkap dan link "
-        "Google Maps akan ditampilkan. Ketik </i><b>kategori</b>"
-        "<i> untuk berganti kategori.</i>\n\n"
+        "Pilih kategori wisata lalu ketik nama "
+        "destinasi (boleh sebagian saja) untuk melihat informasi wisata, "
+        "lokasi, Google Maps, dan event terkait. "
+        "Ketik <b>kategori</b> untuk memilih kategori lain.\n\n"
+        "🔔 <b>Pengingat</b>\n"
+        "Bot mengirim pengingat sehari sebelum event berlangsung. "
+        "Ketik /berhenti untuk menghentikan, /start untuk mengaktifkan lagi.\n\n"
         "🔁 <b>Berpindah menu</b>\n"
-        "<i>Tekan tombol menu kapan saja, atau ketik </i><b>menu</b>"
-        "<i>. Perintah </i><b>/start</b><i> mengulang dari awal.</i>",
+        "Tekan tombol menu kapan saja, atau ketik <b>menu</b>. "
+        "Perintah /start mengulang dari awal.\n\n"
+        "Pilih menu di bawah untuk mulai menggunakan bot.",
     )
 
 
-# ---------------------------------------------------------
-# Router pesan teks (berdasarkan state)
-# ---------------------------------------------------------
+# =========================================================
+# HANDLER: ROUTER PESAN TEKS
+# =========================================================
 
 MENU_ACTIONS = {
     MENU_DAFTAR: daftar_event,
@@ -1806,44 +1743,45 @@ MENU_ACTIONS = {
     MENU_BANTUAN: bantuan,
 }
 
-BACK_WORDS = {"menu", "menu utama", "kembali"}
 
+async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    1. Tombol menu selalu berlaku dan berpindah mode.
+    2. Selain itu, teks diproses sesuai mode yang sedang aktif.
+    """
 
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
 
     text = update.message.text.strip()
-    lowered = text.lower()
+    command = text.lower()
 
-    # 1. Tombol menu selalu berlaku: berpindah state.
     action = MENU_ACTIONS.get(text)
     if action:
         await action(update, context)
         return
 
-    if lowered in BACK_WORDS:
+    if command in BACK_WORDS:
         await main_menu(update, context)
         return
 
-    # 2. Selain itu, teks diproses sesuai state aktif.
-    mode = get_mode(context)
+    mode = context.user_data.get("mode")
 
-    if mode == MODE_EVENT_SEARCH:
-        await proses_pencarian_event(update, context)
+    if mode == MODE_SEARCH:
+        await proses_pencarian(update, context)
 
-    elif mode in (MODE_WISATA_MENU, MODE_WISATA_SEARCH):
-        if lowered in {"kategori", "ganti kategori"}:
+    elif mode in (MODE_WISATA_MENU, MODE_WISATA):
+        if command == "kategori":
             await menu_wisata(update, context)
         else:
             await proses_pencarian_destinasi(update, context)
 
     else:
-        await reply_html(update, MSG_PILIH_MENU)
+        await reply(update, MSG_PILIH_MENU)
 
 
 # =========================================================
-# 8. PENANGANAN ERROR
+# PENANGANAN ERROR
 # =========================================================
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
@@ -1862,10 +1800,10 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if isinstance(error, Forbidden):
-        log.info("Pengguna memblokir bot atau chat tidak dapat diakses: %s", error)
+        log.info("Chat tidak dapat diakses (bot diblokir?): %s", error)
         return
 
-    try:  # httpx.* yang belum terbungkus oleh PTB
+    try:  # error httpx yang belum dibungkus oleh python-telegram-bot
         import httpx
 
         if isinstance(error, (httpx.TimeoutException, httpx.TransportError)):
@@ -1886,16 +1824,19 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================================================
-# 9. MAIN
+# MAIN
 # =========================================================
 
 def main():
+    global SCHEDULER
+
     if not TOKEN:
         raise ValueError("TELEGRAM_BOT_TOKEN belum diatur.")
 
+    SCHEDULER = load_scheduler()
+
     # Muat dataset di awal agar masalah path langsung terlihat di log.
-    events = EVENTS.get()
-    destinations = DESTINATIONS.get()
+    events, destinations = load_events(), load_destinations()
     log.info(
         "Event: %s | Destinasi: %s",
         f"{len(events)} baris" if events is not None else "GAGAL DIMUAT",
@@ -1911,18 +1852,15 @@ def main():
         .pool_timeout(20)
         .get_updates_connect_timeout(20)
         .get_updates_read_timeout(30)
+        .post_init(post_init)
+        .post_shutdown(post_shutdown)
         .build()
     )
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("menu", main_menu))
-    app.add_handler(CommandHandler(["bantuan", "help"], bantuan))
-
-    app.add_handler(CallbackQueryHandler(wisata_category_callback, pattern=r"^wiscategory_\d+$"))
-    app.add_handler(CallbackQueryHandler(wisata_change_callback, pattern=r"^wischange$"))
-
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-
+    app.add_handler(CommandHandler("berhenti", berhenti))
+    app.add_handler(CallbackQueryHandler(wisata_callback, pattern=r"^wiscategory_\d+$"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu))
     app.add_error_handler(error_handler)
 
     log.info("WisataKP Bot sedang berjalan...")

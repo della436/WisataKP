@@ -1030,7 +1030,14 @@ def render_review_list(reviews, empty_message, empty_type="info"):
 # Emoji pada kartu hasil per kategori.
 # Tambahkan kategori lain di sini jika ingin ikut punya gambar.
 CATEGORY_ART = {
-    "Pantai": "🏖️",
+    "Pantai": ("🏖️", "pantai"),
+    "Wisata Air": ("💧", "air"),
+    "Wisata Alam": ("🌳", "alam"),
+    "Taman & Kebun": ("🌺", "taman"),
+    "Panorama": ("🌄", "panorama"),
+    "Desa & Budaya": ("🏡", "desa"),
+    "Kuliner": ("🍜", "kuliner"),
+    "Lainnya": ("📍", "lainnya"),
 }
 
 
@@ -1046,8 +1053,11 @@ def show_destination_card(row, key):
 
         if art:
 
+            emoji, art_class = art
+
             st.markdown(
-                f'<div class="dest-art">{art}</div>',
+                f'<div class="dest-art dest-art-{art_class}">'
+                f'{emoji}</div>',
                 unsafe_allow_html=True
             )
 

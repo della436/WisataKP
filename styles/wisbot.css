@@ -42,9 +42,9 @@
 }
 
 [data-testid="stMainBlockContainer"] {
-    max-width: 1120px;
+    max-width: 980px;
     padding-top: 1.5rem;
-    padding-bottom: 7rem;
+    padding-bottom: 5.5rem;
 }
 
 .wb-header,
@@ -142,7 +142,10 @@
 
 .wb-hero {
     max-width: 720px;
-    padding: 34px 6px 22px;
+    margin: 0 auto;
+    text-align: center;
+    /* ruang atas menyesuaikan tinggi layar, supaya pembuka terasa di tengah */
+    padding: max(18px, calc((100vh - 1000px) / 2)) 6px 8px;
 }
 
 .wb-hero-eyebrow {
@@ -155,9 +158,9 @@
 
 .wb-hero-title {
     font-family: "Cormorant Garamond", serif;
-    font-size: clamp(3rem, 6vw, 5rem);
+    font-size: clamp(2.6rem, 5vw, 4.2rem);
     font-weight: 600;
-    line-height: 0.98;
+    line-height: 1;
     letter-spacing: -1.5px;
     color: var(--wb-navy);
 }
@@ -168,8 +171,8 @@
 }
 
 .wb-hero-sub {
-    max-width: 540px;
-    margin-top: 20px;
+    max-width: 520px;
+    margin: 16px auto 0;
     font-size: 0.97rem;
     line-height: 1.8;
     color: var(--wb-text);
@@ -177,8 +180,8 @@
 
 /* Kartu menu */
 div[class*="st-key-wb_qp_card_"] {
-    padding: 18px 18px 14px;
-    background: var(--wb-glass);
+    padding: 18px 18px 22px;
+    background: rgba(255, 255, 255, 0.96);
     border: 1px solid var(--wb-border);
     border-radius: 22px;
     box-shadow: var(--wb-shadow);
@@ -278,7 +281,7 @@ div[class*="st-key-wb_qp_card_"] button:hover {
     padding: 15px 22px;
     background: rgba(255, 255, 255, 0.96);
     border: 1px solid var(--wb-border);
-    border-radius: 6px 22px 22px 22px;
+    border-radius: 22px 22px 22px 6px;
     box-shadow: 0 6px 18px rgba(36, 70, 101, 0.09);
     font-size: 0.96rem;
     line-height: 1.75;
@@ -329,7 +332,7 @@ div[class*="st-key-wb_qp_card_"] button:hover {
     padding: 14px 22px;
     background: rgba(255, 255, 255, 0.96);
     border: 1px solid var(--wb-border);
-    border-radius: 6px 22px 22px 22px;
+    border-radius: 22px 22px 22px 6px;
     box-shadow: 0 6px 18px rgba(36, 70, 101, 0.09);
 }
 
@@ -345,13 +348,13 @@ div[class*="st-key-wb_qp_card_"] button:hover {
     font-size: 1.4rem;
 }
 
-/* Bubble pengguna (kanan, gradient biru-navy) */
+/* Pesan pengguna: avatar bulat di kanan + bubble biru */
 [data-testid="stChatMessage"]:is(
     [aria-label*="user" i],
     :has([data-testid="stChatMessageAvatarUser"])
 ) {
-    flex-direction: row !important;
-    justify-content: flex-end !important;
+    flex-direction: row-reverse !important;
+    justify-content: flex-start !important;
 }
 
 [data-testid="stChatMessage"]:is(
@@ -360,24 +363,47 @@ div[class*="st-key-wb_qp_card_"] button:hover {
 ) [data-testid="stChatMessageContent"] {
     width: fit-content !important;
     flex: 0 1 auto !important;
-    max-width: 72%;
-    margin: 0 0 0 auto !important;
-    padding: 13px 22px;
-    background: linear-gradient(135deg, #2E6A9E 0%, #173650 100%);
+    max-width: min(70%, 560px);
+    margin: 0 !important;
+    padding: 12px 18px !important;
+    background: linear-gradient(135deg, #3A7BB8 0%, #1F4A73 100%);
     border: none;
-    border-radius: 22px 6px 22px 22px;
-    box-shadow: 0 8px 20px rgba(23, 54, 80, 0.26);
+    border-radius: 20px 20px 6px 20px;
+    box-shadow: 0 3px 10px rgba(23, 54, 80, 0.22);
+    font-size: 0.95rem;
+    line-height: 1.5;
 }
 
 [data-testid="stChatMessage"]:is(
     [aria-label*="user" i],
     :has([data-testid="stChatMessageAvatarUser"])
-) [data-testid="stChatMessageContent"] :is(p, li, strong, span) {
+) [data-testid="stChatMessageContent"] :is(p, li, strong, span, div) {
+    color: #FFFFFF !important;
+    line-height: 1.5;
+}
+
+/* Avatar pengguna */
+[data-testid="stChatMessageAvatarUser"] {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50% !important;
+    background: linear-gradient(135deg, #8DB4D8, #3F73A3) !important;
+    color: #FFFFFF !important;
+    box-shadow: 0 3px 10px rgba(36, 70, 101, 0.18);
+}
+
+[data-testid="stChatMessageAvatarUser"] svg {
+    fill: #FFFFFF !important;
     color: #FFFFFF !important;
 }
 
-[data-testid="stChatMessageAvatarUser"] {
-    display: none;
+/* Hilangkan jarak bawaan Streamlit di dalam bubble (teks tidak "turun") */
+[data-testid="stChatMessageContent"] [data-testid="stElementContainer"],
+[data-testid="stChatMessageContent"] [data-testid="stMarkdownContainer"] {
+    margin: 0 !important;
 }
 
 
@@ -1000,7 +1026,7 @@ div[class*="st-key-wb_cat_"] button:hover p,
 
 /* Saat chat kosong: kartu menu turun ke atas kotak ketik */
 .wb-welcome-spacer {
-    height: max(24px, calc(100vh - 800px));
+    height: max(14px, calc((100vh - 1000px) / 2));
 }
 
 /* Teks bubble: tanpa jarak berlebih di atas/bawah */
@@ -1068,7 +1094,7 @@ div[class*="st-key-wb_cat_"] button:hover p,
     }
 
     .wb-hero-title {
-        font-size: 3rem;
+        font-size: 2.4rem;
     }
 
     .wb-panel-head {

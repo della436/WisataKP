@@ -232,13 +232,134 @@ iframe {
     justify-content: center;
     border-radius: 12px;
     font-size: 2.6rem;
-    /* langit -> pasir */
+    /* default: langit -> pasir (Pantai) */
     background: linear-gradient(
         180deg,
         #DCEBFA 0%,
         #E9F3FB 55%,
         #F7E9D7 100%
     );
+}
+
+.dest-art-air {
+    background: linear-gradient(180deg, #DCEBFA 0%, #C3E2F2 100%);
+}
+
+.dest-art-alam {
+    background: linear-gradient(180deg, #E6F3E8 0%, #CFE6D2 100%);
+}
+
+.dest-art-taman {
+    background: linear-gradient(180deg, #F8E7F1 0%, #E4F2E1 100%);
+}
+
+.dest-art-panorama {
+    background: linear-gradient(180deg, #DCEBFA 0%, #F8E4D0 100%);
+}
+
+.dest-art-desa {
+    background: linear-gradient(180deg, #FFF1DF 0%, #F2E2CB 100%);
+}
+
+.dest-art-kuliner {
+    background: linear-gradient(180deg, #FFEBE2 0%, #F9DCCB 100%);
+}
+
+.dest-art-lainnya {
+    background: linear-gradient(180deg, #EEF2F6 0%, #E1E9F2 100%);
+}
+
+
+/* =========================================================
+   SMART EXPLORE & SURPRISE ME (tampilan saja)
+   ========================================================= */
+
+/* Lebar konten lebih ramping dan rapi */
+[data-testid="stMainBlockContainer"] {
+    max-width: 1180px;
+}
+
+/* Kotak pencarian + kategori dibungkus panel kaca */
+[data-testid="stHorizontalBlock"]:has([data-testid="stTextInput"]):has([data-testid="stSelectbox"]) {
+    padding: 22px 24px 26px;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(213, 225, 235, 0.95);
+    border-radius: 22px;
+    box-shadow: 0 8px 26px rgba(36, 70, 101, 0.08);
+}
+
+/* Label input */
+[data-testid="stWidgetLabel"] p {
+    font-size: 0.82rem !important;
+    font-weight: 600 !important;
+    color: #4A647D !important;
+    letter-spacing: 0.2px;
+}
+
+/* Input & dropdown lebih lega */
+[data-testid="stTextInput"] input {
+    min-height: 3rem;
+    padding: 0 1rem;
+    font-size: 0.95rem;
+    box-shadow: 0 2px 8px rgba(36, 70, 101, 0.05);
+}
+
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+    min-height: 3rem;
+    border-radius: 12px !important;
+    box-shadow: 0 2px 8px rgba(36, 70, 101, 0.05);
+}
+
+[data-testid="stTextInput"] input::placeholder {
+    color: #8FA3B5;
+}
+
+/* Tombol: gradasi biru-navy, sudut membulat, naik sedikit saat disorot */
+div[data-testid="stButton"] button {
+    min-height: 3rem;
+    border: none !important;
+    border-radius: 14px !important;
+    background: linear-gradient(135deg, #2F6DA3 0%, #183653 100%) !important;
+    box-shadow: 0 6px 16px rgba(24, 54, 83, 0.22);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+div[data-testid="stButton"] button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 22px rgba(24, 54, 83, 0.28);
+    filter: brightness(1.06);
+}
+
+div[data-testid="stButton"] button:active {
+    transform: translateY(0);
+}
+
+/* Kotak info "Cari destinasi atau pilih kategori..." */
+[data-testid="stAlert"] {
+    background: rgba(255, 255, 255, 0.88) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 4px 16px rgba(36, 70, 101, 0.06);
+}
+
+[data-testid="stAlert"]:has([data-testid="stAlertContentInfo"]) {
+    border-left: 4px solid #7FB0DC !important;
+}
+
+[data-testid="stAlert"] p {
+    color: #3A5470 !important;
+}
+
+/* Pembatas: garis yang memudar di kedua ujung */
+[data-testid="stDivider"] hr {
+    height: 1px;
+    margin: 1.8rem 0 !important;
+    border: 0 !important;
+    background: linear-gradient(
+        90deg,
+        rgba(120, 145, 165, 0),
+        rgba(120, 145, 165, 0.45),
+        rgba(120, 145, 165, 0)
+    ) !important;
 }
 
 
