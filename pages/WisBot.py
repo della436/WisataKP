@@ -5,11 +5,13 @@
 
 import base64
 import math
+import random
 import sys
 from html import escape
 from pathlib import Path
 from urllib.parse import quote
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -108,22 +110,26 @@ def apply_background():
     st.markdown(
         f"""
         <style>
-        [data-testid="stMain"] {{
+        html body .stApp {{
             background-image:
                 linear-gradient(
-                    rgba(235, 244, 253, 0.30),
-                    rgba(235, 244, 253, 0.10)
+                    rgba(240, 247, 253, 0.72),
+                    rgba(240, 247, 253, 0.82)
                 ),
-                url("data:{mime};base64,{encoded}");
+                url("data:{mime};base64,{encoded}") !important;
 
-            background-size: cover;
-            background-position: center bottom;
-            background-repeat: no-repeat;
-            background-attachment: fixed;
+            background-size: cover !important;
+            background-position: center !important;
+            background-repeat: no-repeat !important;
+            background-attachment: fixed !important;
         }}
 
-        [data-testid="stMainBlockContainer"],
-        [data-testid="stHeader"] {{
+        html body [data-testid="stAppViewContainer"],
+        html body [data-testid="stMain"],
+        html body [data-testid="stMainBlockContainer"],
+        html body [data-testid="stHeader"],
+        html body [data-testid="stBottom"],
+        html body [data-testid="stBottom"] > div {{
             background: transparent !important;
         }}
         </style>
@@ -172,13 +178,6 @@ QUICK_PROMPTS = [
         "title": "Review Positif Terbanyak",
         "desc": "Temukan destinasi dengan ulasan positif terbanyak",
         "question": "Destinasi dengan review positif paling banyak",
-    },
-    {
-        "icon": "🗓️",
-        "art": "🗺️",
-        "title": "Buat Itinerary",
-        "desc": "Rencanakan perjalananmu di Kulon Progo",
-        "question": "Buat itinerary 1 hari",
     },
 ]
 
@@ -272,6 +271,13 @@ if "wisbot_messages" not in st.session_state:
 
 if "wisbot_recommendation_state" not in st.session_state:
     st.session_state.wisbot_recommendation_state = None
+
+# Destinasi yang sudah pernah disarankan (supaya tidak itu-itu saja)
+if "wisbot_shown" not in st.session_state:
+    st.session_state.wisbot_shown = []
+
+if "wisbot_last_category" not in st.session_state:
+    st.session_state.wisbot_last_category = None
 
 
 # ============================================================
@@ -799,6 +805,266 @@ def build_itinerary_html(items):
 
 
 # ============================================================
+# REKOMENDASI PINTAR (bervariasi & tidak mengulang)
+# ============================================================
+
+# Kata yang menandakan pengguna minta saran wisata (bahasa santai)
+DISCOVERY_KEYWORDS = [
+    "bosan", "bosen", "suntuk", "gabut", "jenuh", "healing",
+    "refreshing", "liburan", "jalan-jalan", "jalan jalan",
+    "pergi kemana", "pergi ke mana", "enaknya kemana",
+    "enaknya ke mana", "mau kemana", "mau ke mana",
+    "kemana ya", "ke mana ya", "saran wisata", "saran tempat",
+    "wisata lain", "wisata yang lain", "tempat lain",
+    "selain itu", "yang lain", "lainnya", "ada lagi",
+    "rekomendasi lain", "rekomendasiin", "rekomendasikan",
+]
+
+# Kata yang minta "yang lain" (ulang dengan konteks sebelumnya)
+MORE_KEYWORDS = [
+    "selain itu", "yang lain", "lainnya", "ada lagi",
+    "lagi dong", "wisata lain", "tempat lain", "rekomendasi lain",
+]
+
+# Suasana hati -> kategori yang cocok
+MOOD_CATEGORIES = [
+    (("healing", "tenang", "stres", "stress", "capek", "lelah",
+      "santai", "refreshing", "relax"),
+     ["Panorama", "Wisata Alam", "Pantai"]),
+    (("seru", "main air", "basah", "segar", "dingin"),
+     ["Wisata Air"]),
+    (("sunset", "sunrise", "pemandangan", "foto", "estetik",
+      "instagramable"),
+     ["Panorama", "Pantai"]),
+    (("budaya", "tradisi", "sejarah"),
+     ["Desa & Budaya"]),
+    (("makan", "kuliner", "kopi", "nongkrong", "cafe"),
+     ["Kuliner"]),
+]
+
+GREETING_WORDS = (
+    "halo", "hai", "hi", "hello", "hey", "selamat",
+    "assalamualaikum", "siapa kamu", "kamu siapa",
+    "bisa apa", "apa itu wisbot",
+)
+
+
+def is_discovery_request(question):
+
+    normalized = str(question).lower()
+
+    return any(word in normalized for word in DISCOVERY_KEYWORDS)
+
+
+def is_greeting(question):
+
+    normalized = str(question).lower().strip()
+
+    return any(word in normalized for word in GREETING_WORDS)
+
+
+def weighted_sample(frame, count):
+    """Ambil acak, tapi rating & jumlah review tinggi lebih berpeluang."""
+
+    if frame.empty:
+        return frame
+
+    # sisa lebih sedikit dari yang diminta -> ambil semuanya (diacak)
+    if count >= len(frame):
+        return frame.sample(frac=1)
+
+    rating = frame["rating_num"].fillna(0).clip(lower=0.1)
+
+    reviews = frame["reviews_num"].fillna(0).clip(lower=0)
+
+    weights = (rating ** 3) * (np.log1p(reviews) + 1)
+
+    try:
+
+        return frame.sample(n=count, weights=weights)
+
+    except ValueError:
+
+        return frame.sample(n=count)
+
+
+def smart_recommendation(question, fallback=False, limit=5):
+    """
+    Rekomendasi yang bervariasi:
+    - mengikuti kategori / suasana hati dari kalimat pengguna
+    - tidak mengulang destinasi yang sudah disarankan
+    - tanpa kategori -> dicampur dari berbagai jenis wisata
+    """
+
+    if DESTINATIONS is None or DESTINATIONS.empty:
+        return None
+
+    df = DESTINATIONS.copy()
+
+    if "kategori" not in df.columns:
+        return None
+
+    normalized = str(question).lower()
+
+    wants_more = any(word in normalized for word in MORE_KEYWORDS)
+
+    category = extract_category_preference(question)
+
+    if not category and wants_more:
+        category = st.session_state.get("wisbot_last_category")
+
+    mood_categories = []
+
+    if not category:
+
+        for words, categories in MOOD_CATEGORIES:
+
+            if any(word in normalized for word in words):
+                mood_categories = categories
+                break
+
+    # ----- tentukan kumpulan destinasi -----
+    category_missing = False
+
+    if category:
+
+        pool = df[df["kategori"] == category]
+
+        if len(pool) < 3:
+            pool = df
+            category_missing = True
+
+    elif mood_categories:
+
+        pool = df[df["kategori"].isin(mood_categories)]
+
+        if len(pool) < 3:
+            pool = df
+
+    else:
+        pool = df
+
+    # hanya destinasi yang ratingnya bagus
+    good = pool[pool["rating_num"].fillna(0) >= 4.0]
+
+    if len(good) >= 3:
+        pool = good
+
+    shown = st.session_state.wisbot_shown
+
+    fresh = pool[~pool["title"].isin(shown)]
+
+    reset = False
+
+    if fresh.empty:
+        fresh = pool
+        reset = True
+        st.session_state.wisbot_shown = []
+
+    # ----- pilih destinasi -----
+    if category or mood_categories:
+
+        picked = weighted_sample(fresh, limit)
+
+    else:
+
+        # campur berbagai kategori: satu per kategori dulu
+        parts = []
+
+        categories = list(fresh["kategori"].dropna().unique())
+
+        random.shuffle(categories)
+
+        for name in categories[:limit]:
+
+            parts.append(
+                weighted_sample(fresh[fresh["kategori"] == name], 1)
+            )
+
+        picked = pd.concat(parts) if parts else fresh.head(0)
+
+        if len(picked) < limit:
+
+            rest = fresh[~fresh["title"].isin(picked["title"])]
+
+            picked = pd.concat(
+                [picked, weighted_sample(rest, limit - len(picked))]
+            )
+
+    if picked.empty:
+        return None
+
+    picked = picked.sample(frac=1)
+
+    st.session_state.wisbot_shown = list(
+        dict.fromkeys(
+            st.session_state.wisbot_shown + picked["title"].tolist()
+        )
+    )
+
+    if category:
+        st.session_state.wisbot_last_category = category
+
+    # ----- kalimat pembuka -----
+    if fallback:
+
+        intro = (
+            "Hmm, aku belum begitu paham maksudmu 🤔 "
+            "Tapi siapa tahu kamu suka beberapa tempat ini:"
+        )
+
+    elif wants_more:
+
+        intro = random.choice([
+            "Oke, ini pilihan lain buat kamu! 🌿",
+            "Siap, aku carikan yang berbeda ya. ✨",
+            "Masih banyak kok! Coba yang ini:",
+        ])
+
+    elif any(word in normalized for word in ("bosan", "bosen", "suntuk", "gabut", "jenuh")):
+
+        intro = random.choice([
+            "Lagi bosan ya? Yuk keluar rumah! 😄 Coba salah satu tempat ini:",
+            "Waktunya refreshing! 🌿 Ini beberapa ide buat kamu:",
+        ])
+
+    elif category and not category_missing:
+
+        intro = f"Ini pilihan wisata **{category}** buat kamu! 🌿"
+
+    elif category and category_missing:
+
+        intro = (
+            f"Kategori **{category}** belum banyak di data, "
+            "jadi ini pilihan lain yang menarik:"
+        )
+
+    else:
+
+        intro = random.choice([
+            "Aku punya beberapa ide buat kamu! 🌿",
+            "Coba deh tempat-tempat ini. ✨",
+        ])
+
+    if reset:
+        intro += (
+            "\n\nSemua pilihan sudah pernah kutampilkan, "
+            "jadi aku acak ulang ya."
+        )
+
+    intro += (
+        "\n\nMau yang lain? Ketik *selain itu*, atau sebut jenisnya "
+        "(pantai, air terjun, taman, panorama)."
+    )
+
+    return {
+        "kind": "recommendation",
+        "content": intro,
+        "data": build_cards(picked),
+    }
+
+
+# ============================================================
 # RESPONSE GENERATOR
 # ============================================================
 
@@ -830,6 +1096,24 @@ def generate_response(question):
 
         category = extract_category_preference(question)
 
+        # Saran wisata santai / "yang lain" -> rekomendasi bervariasi
+        if (
+            intent not in ("popular", "positive_reviews")
+            and is_discovery_request(question)
+        ):
+
+            try:
+                known_destination = find_destination(question)
+            except Exception:
+                known_destination = None
+
+            if not known_destination:
+
+                smart = smart_recommendation(question)
+
+                if smart:
+                    return smart
+
         # Destinasi paling populer
         if intent == "popular":
 
@@ -848,6 +1132,11 @@ def generate_response(question):
 
         # Rekomendasi
         if intent == "recommendation" or (intent == "unknown" and category):
+
+            smart = smart_recommendation(question)
+
+            if smart:
+                return smart
 
             result = recommend_destinations(question, limit=5)
 
@@ -885,9 +1174,21 @@ def generate_response(question):
                     "data": build_cards(result),
                 }
 
+        answer = handle_wisbot(question)
+
+        if (
+            str(answer).strip().startswith("👋 Hai! Aku WisBot")
+            and not is_greeting(question)
+        ):
+
+            smart = smart_recommendation(question, fallback=True)
+
+            if smart:
+                return smart
+
         return {
             "kind": "text",
-            "content": handle_wisbot(question),
+            "content": answer,
             "data": None,
         }
 
@@ -1061,6 +1362,7 @@ if not messages:
 
     st.markdown(
         '<div class="wb-hero">'
+        '<div class="wb-hero-eyebrow">DISCOVER · EXPLORE · EXPERIENCE</div>'
         '<div class="wb-hero-title">'
         'Your Next <span class="wb-hl">Adventure</span> Starts Here ✨'
         '</div>'
@@ -1072,7 +1374,13 @@ if not messages:
         unsafe_allow_html=True
     )
 
-    prompt_columns = st.columns(4)
+    # Pemisah: mendorong kartu menu ke bawah, tepat di atas kotak ketik
+    st.markdown(
+        '<div class="wb-welcome-spacer"></div>',
+        unsafe_allow_html=True
+    )
+
+    prompt_columns = st.columns(len(QUICK_PROMPTS))
 
     for index, prompt in enumerate(QUICK_PROMPTS):
 
@@ -1106,29 +1414,6 @@ if not messages:
 
                         st.rerun()
 
-    with st.container(key="wb_try"):
-
-        st.markdown(
-            '<div class="wb-try-title">✨ Coba tanyakan, misalnya:</div>',
-            unsafe_allow_html=True
-        )
-
-        try_columns = st.columns(4)
-
-        for index, text in enumerate(TRY_QUESTIONS):
-
-            with try_columns[index]:
-
-                if st.button(
-                    f"💬 {text}",
-                    key=f"wb_try_{index}",
-                    use_container_width=True
-                ):
-
-                    st.session_state.wisbot_pending_question = text
-
-                    st.rerun()
-
 
 # ============================================================
 # 3. CONVERSATION AREA
@@ -1136,14 +1421,7 @@ if not messages:
 
 else:
 
-    toolbar_left, toolbar_right = st.columns([5, 1])
-
-    with toolbar_left:
-
-        st.markdown(
-            '<div class="wb-toolbar-title">💬 Percakapan</div>',
-            unsafe_allow_html=True
-        )
+    _toolbar_space, toolbar_right = st.columns([5, 1])
 
     with toolbar_right:
 
@@ -1156,6 +1434,10 @@ else:
             st.session_state.wisbot_messages = []
 
             st.session_state.wisbot_recommendation_state = None
+
+            st.session_state.wisbot_shown = []
+
+            st.session_state.wisbot_last_category = None
 
             st.session_state.pop("wisbot_pending_question", None)
 
@@ -1229,36 +1511,6 @@ if st.session_state.wisbot_recommendation_state == "choose_category":
                     )
 
                     st.session_state.wisbot_recommendation_state = None
-
-                    st.rerun()
-
-
-# ============================================================
-# 6. SUGGESTED QUESTIONS
-# ============================================================
-
-elif messages and messages[-1]["role"] == "assistant":
-
-    suggestions = messages[-1].get("suggestions", [])
-
-    if suggestions:
-
-        with st.container(key="wb_suggest"):
-
-            st.markdown(
-                '<div class="wb-suggest-title">Mungkin kamu juga tertarik</div>',
-                unsafe_allow_html=True
-            )
-
-            for index, (icon, text) in enumerate(suggestions):
-
-                if st.button(
-                    f"{icon}  {text}",
-                    key=f"wb_sg_{len(messages)}_{index}",
-                    use_container_width=True
-                ):
-
-                    st.session_state.wisbot_pending_question = text
 
                     st.rerun()
 

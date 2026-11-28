@@ -1027,13 +1027,31 @@ def render_review_list(reviews, empty_message, empty_type="info"):
 # 10. DESTINATION CARD
 # ============================================================
 
+# Emoji pada kartu hasil per kategori.
+# Tambahkan kategori lain di sini jika ingin ikut punya gambar.
+CATEGORY_ART = {
+    "Pantai": "🏖️",
+}
+
+
 def show_destination_card(row, key):
 
     name = safe_text(row["title"])
 
+    category = get_category(name)
+
     with st.container(border=True):
 
-        st.caption(get_category(name))
+        art = CATEGORY_ART.get(category)
+
+        if art:
+
+            st.markdown(
+                f'<div class="dest-art">{art}</div>',
+                unsafe_allow_html=True
+            )
+
+        st.caption(category)
 
         st.markdown(f"**{name}**")
 

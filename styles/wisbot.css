@@ -1,8 +1,12 @@
 /* ============================================================
    WISATAKP - WISBOT
    File: styles/wisbot.css
+   Tampilan disamakan dengan Explore Destinations:
+   background pemandangan + overlay putih, Cormorant Garamond
+   untuk judul, Inter untuk teks, kartu kaca (glass) biru lembut.
+
    Isi:
-   1. Variabel & layout
+   1. Token & layout
    2. Header
    3. Welcome (hero, kartu menu, coba tanyakan)
    4. Bubble chat
@@ -15,20 +19,26 @@
   11. Chat input, footer, responsive
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap');
 
 
 /* ============================================================
-   1. VARIABEL & LAYOUT
+   1. TOKEN & LAYOUT
    ============================================================ */
 
 :root {
-    --wb-navy: #1B3A6B;
-    --wb-text: #4A6580;
-    --wb-muted: #6B7C8E;
+    --wb-navy: #173650;
+    --wb-navy-2: #193B58;
+    --wb-text: #526B82;
+    --wb-muted: #68839E;
+    --wb-accent: #3478B8;
     --wb-blue-50: #F1F6FC;
     --wb-blue-100: #E3EEFC;
-    --wb-border: #E1E9F1;
+    --wb-border: rgba(213, 225, 235, 0.95);
+    --wb-glass: rgba(255, 255, 255, 0.80);
+    --wb-glass-strong: rgba(255, 255, 255, 0.92);
+    --wb-shadow: 0 6px 22px rgba(36, 70, 101, 0.08);
+    --wb-shadow-hover: 0 12px 28px rgba(36, 70, 101, 0.14);
 }
 
 [data-testid="stMainBlockContainer"] {
@@ -60,11 +70,12 @@
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    padding: 14px 26px;
-    margin-bottom: 18px;
-    background: rgba(255, 255, 255, 0.93);
-    border-radius: 24px;
-    box-shadow: 0 6px 22px rgba(27, 58, 107, 0.1);
+    padding: 14px 24px;
+    margin-bottom: 8px;
+    background: var(--wb-glass-strong);
+    border: 1px solid var(--wb-border);
+    border-radius: 22px;
+    box-shadow: var(--wb-shadow);
 }
 
 .wb-header-left {
@@ -74,25 +85,26 @@
 }
 
 .wb-logo {
-    width: 54px;
-    height: 54px;
-    border-radius: 50%;
-    background: var(--wb-blue-100);
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #DCEBFA, #C4DCF2);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.8rem;
+    font-size: 1.7rem;
 }
 
 .wb-header-title {
-    font-size: 1.35rem;
-    font-weight: 800;
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.3px;
     color: var(--wb-navy);
-    line-height: 1.25;
+    line-height: 1.3;
 }
 
 .wb-header-sub {
-    font-size: 0.95rem;
+    font-size: 0.88rem;
     color: var(--wb-text);
 }
 
@@ -100,19 +112,27 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 16px;
+    padding: 7px 15px;
     border-radius: 999px;
     background: #E4F3E9;
     color: #2F8A55;
-    font-size: 0.85rem;
-    font-weight: 700;
+    font-size: 0.82rem;
+    font-weight: 600;
 }
 
 .wb-online-dot {
-    width: 9px;
-    height: 9px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: #2F8A55;
+    box-shadow: 0 0 0 0 rgba(47, 138, 85, 0.5);
+    animation: wb-pulse 2.2s infinite;
+}
+
+@keyframes wb-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(47, 138, 85, 0.45); }
+    70%  { box-shadow: 0 0 0 8px rgba(47, 138, 85, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(47, 138, 85, 0); }
 }
 
 
@@ -121,57 +141,61 @@
    ============================================================ */
 
 .wb-hero {
-    max-width: 640px;
-    padding: 26px 32px;
-    margin-bottom: 20px;
-    background: rgba(255, 255, 255, 0.82);
-    backdrop-filter: blur(6px);
-    border-radius: 28px;
-    box-shadow: 0 6px 22px rgba(27, 58, 107, 0.08);
+    max-width: 720px;
+    padding: 34px 6px 22px;
+}
+
+.wb-hero-eyebrow {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 3px;
+    color: var(--wb-muted);
+    margin-bottom: 14px;
 }
 
 .wb-hero-title {
-    font-size: clamp(2.2rem, 5vw, 3.3rem);
-    font-weight: 800;
-    line-height: 1.12;
-    letter-spacing: -1px;
+    font-family: "Cormorant Garamond", serif;
+    font-size: clamp(3rem, 6vw, 5rem);
+    font-weight: 600;
+    line-height: 0.98;
+    letter-spacing: -1.5px;
     color: var(--wb-navy);
 }
 
 .wb-hl {
-    padding: 0 10px;
-    border-radius: 12px;
-    background: #D6E6FB;
-    color: #2F62C9;
+    font-style: italic;
+    color: var(--wb-accent);
 }
 
 .wb-hero-sub {
-    margin-top: 14px;
-    font-size: 1rem;
-    line-height: 1.7;
-    color: #33506E;
+    max-width: 540px;
+    margin-top: 20px;
+    font-size: 0.97rem;
+    line-height: 1.8;
+    color: var(--wb-text);
 }
 
 /* Kartu menu */
 div[class*="st-key-wb_qp_card_"] {
     padding: 18px 18px 14px;
-    background: #FFFFFF;
+    background: var(--wb-glass);
+    border: 1px solid var(--wb-border);
     border-radius: 22px;
-    box-shadow: 0 6px 20px rgba(27, 58, 107, 0.1);
+    box-shadow: var(--wb-shadow);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
     gap: 0.4rem;
 }
 
 div[class*="st-key-wb_qp_card_"]:hover {
     transform: translateY(-3px);
-    box-shadow: 0 12px 28px rgba(27, 58, 107, 0.16);
+    box-shadow: var(--wb-shadow-hover);
 }
 
 .wb-qp-icon {
     width: 46px;
     height: 46px;
     border-radius: 14px;
-    background: var(--wb-blue-100);
+    background: linear-gradient(135deg, #DCEBFA, #C9DFF4);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -180,24 +204,26 @@ div[class*="st-key-wb_qp_card_"]:hover {
 }
 
 .wb-qp-title {
-    font-size: 1.05rem;
-    font-weight: 800;
+    font-size: 1rem;
+    font-weight: 700;
     line-height: 1.3;
+    letter-spacing: -0.2px;
     color: var(--wb-navy);
-    min-height: 2.7rem;
-}
-
-.wb-qp-desc {
-    font-size: 0.86rem;
-    line-height: 1.5;
-    color: var(--wb-text);
     min-height: 2.6rem;
 }
 
+/* min-height lebih tinggi agar teks tidak menimpa ikon di bawahnya */
+.wb-qp-desc {
+    font-size: 0.84rem;
+    line-height: 1.55;
+    color: var(--wb-text);
+    min-height: 4.2rem;
+}
+
 .wb-qp-art {
-    font-size: 2.6rem;
+    font-size: 2.2rem;
     line-height: 1;
-    opacity: 0.9;
+    opacity: 0.85;
 }
 
 div[class*="st-key-wb_qp_card_"] [data-testid="stHorizontalBlock"] {
@@ -227,69 +253,34 @@ div[class*="st-key-wb_qp_card_"] button p {
 }
 
 div[class*="st-key-wb_qp_card_"] button:hover {
-    background: #2F62C9 !important;
+    background: var(--wb-accent) !important;
 }
-
-/* Panel "Coba tanyakan" */
-div[class*="st-key-wb_try"]:not([class*="st-key-wb_try_"]) {
-    margin-top: 16px;
-    padding: 16px 20px 18px;
-    background: rgba(241, 247, 253, 0.92);
-    border-radius: 22px;
-    gap: 0.6rem;
-}
-
-.wb-try-title {
-    font-family: "Inter", "Segoe UI", sans-serif;
-    font-size: 1rem;
-    font-weight: 700;
-    color: var(--wb-navy);
-}
-
-div[class*="st-key-wb_try_"] button {
-    background: #FFFFFF !important;
-    border: none !important;
-    border-radius: 999px !important;
-    box-shadow: 0 3px 10px rgba(27, 58, 107, 0.1);
-    min-height: 2.5rem;
-}
-
-div[class*="st-key-wb_try_"] button p {
-    color: #33506E !important;
-    -webkit-text-fill-color: #33506E !important;
-    font-size: 0.88rem;
-    font-weight: 500;
-}
-
-div[class*="st-key-wb_try_"] button:hover {
-    background: var(--wb-navy) !important;
-}
-
-div[class*="st-key-wb_try_"] button:hover p {
-    color: #FFFFFF !important;
-    -webkit-text-fill-color: #FFFFFF !important;
-}
-
 
 /* ============================================================
    4. BUBBLE CHAT
    ============================================================ */
 
 [data-testid="stChatMessage"] {
+    display: flex !important;
+    width: 100%;
     background: transparent !important;
-    padding: 0.45rem 0;
-    gap: 0.75rem;
+    padding: 0.6rem 0;
+    gap: 0.85rem;
     align-items: flex-start;
 }
 
+/* Bubble WisBot (kiri) */
 [data-testid="stChatMessageContent"] {
-    max-width: 94%;
-    padding: 14px 20px;
-    background: #FFFFFF;
-    border: 1px solid #E3ECF6;
-    border-radius: 20px 20px 20px 6px;
-    box-shadow: 0 3px 12px rgba(27, 58, 107, 0.06);
-    font-size: 0.97rem;
+    width: fit-content !important;
+    flex: 0 1 auto !important;
+    max-width: 86%;
+    margin: 0 auto 0 0 !important;
+    padding: 15px 22px;
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid var(--wb-border);
+    border-radius: 6px 22px 22px 22px;
+    box-shadow: 0 6px 18px rgba(36, 70, 101, 0.09);
+    font-size: 0.96rem;
     line-height: 1.75;
 }
 
@@ -297,6 +288,10 @@ div[class*="st-key-wb_try_"] button:hover p {
 [data-testid="stChatMessageContent"] li {
     color: var(--wb-text);
     line-height: 1.75;
+}
+
+[data-testid="stChatMessageContent"] p:last-child {
+    margin-bottom: 0;
 }
 
 [data-testid="stChatMessageContent"] h2 {
@@ -315,14 +310,27 @@ div[class*="st-key-wb_try_"] button:hover p {
     color: var(--wb-navy);
 }
 
-/* Bubble yang berisi panel: tanpa bubble */
-[data-testid="stChatMessageContent"]:has(.wb-panel) {
+/* Jawaban berisi panel / kartu: wadah dibuat transparan */
+[data-testid="stChatMessageContent"]:has(.wb-panel),
+[data-testid="stChatMessageContent"]:has(.wb-cards) {
+    width: 100% !important;
     max-width: 100%;
-    width: 100%;
     padding: 0;
     background: transparent;
     border: none;
     box-shadow: none;
+}
+
+/* Kalimat pembuka di atas kartu rekomendasi tetap berbentuk bubble */
+[data-testid="stChatMessageContent"]:has(.wb-cards)
+[data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:first-child
+[data-testid="stMarkdownContainer"] {
+    display: inline-block;
+    padding: 14px 22px;
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid var(--wb-border);
+    border-radius: 6px 22px 22px 22px;
+    box-shadow: 0 6px 18px rgba(36, 70, 101, 0.09);
 }
 
 /* Avatar robot */
@@ -330,35 +338,41 @@ div[class*="st-key-wb_try_"] button:hover p {
 [data-testid="stChatMessageAvatarCustom"] {
     width: 44px;
     height: 44px;
-    background: var(--wb-blue-100) !important;
+    background: linear-gradient(135deg, #DCEBFA, #BBD6F0) !important;
     color: var(--wb-navy) !important;
-    border-radius: 50%;
+    border-radius: 14px;
+    box-shadow: 0 4px 12px rgba(36, 70, 101, 0.14);
     font-size: 1.4rem;
 }
 
-/* Bubble pengguna (kanan, navy) */
+/* Bubble pengguna (kanan, gradient biru-navy) */
 [data-testid="stChatMessage"]:is(
     [aria-label*="user" i],
     :has([data-testid="stChatMessageAvatarUser"])
 ) {
-    flex-direction: row-reverse;
+    flex-direction: row !important;
+    justify-content: flex-end !important;
 }
 
 [data-testid="stChatMessage"]:is(
     [aria-label*="user" i],
     :has([data-testid="stChatMessageAvatarUser"])
 ) [data-testid="stChatMessageContent"] {
-    max-width: 78%;
-    margin-left: auto;
-    background: var(--wb-navy);
+    width: fit-content !important;
+    flex: 0 1 auto !important;
+    max-width: 72%;
+    margin: 0 0 0 auto !important;
+    padding: 13px 22px;
+    background: linear-gradient(135deg, #2E6A9E 0%, #173650 100%);
     border: none;
-    border-radius: 20px 20px 6px 20px;
+    border-radius: 22px 6px 22px 22px;
+    box-shadow: 0 8px 20px rgba(23, 54, 80, 0.26);
 }
 
 [data-testid="stChatMessage"]:is(
     [aria-label*="user" i],
     :has([data-testid="stChatMessageAvatarUser"])
-) [data-testid="stChatMessageContent"] p {
+) [data-testid="stChatMessageContent"] :is(p, li, strong, span) {
     color: #FFFFFF !important;
 }
 
@@ -399,7 +413,7 @@ div[class*="st-key-wb_try_"] button:hover p {
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
 }
 
-.wb-rank-gold   { background: #E8B43A; }
+.wb-rank-gold   { background: #D9A441; }
 .wb-rank-silver { background: #A9B4C2; }
 .wb-rank-bronze { background: #C98A55; }
 .wb-rank-plain  { background: #E3EEFC; color: var(--wb-navy); box-shadow: none; }
@@ -409,7 +423,7 @@ div[class*="st-key-wb_try_"] button:hover p {
     align-self: flex-start;
     padding: 4px 12px;
     border-radius: 999px;
-    font-size: 0.78rem;
+    font-size: 0.76rem;
     font-weight: 600;
 }
 
@@ -429,11 +443,11 @@ div[class*="st-key-wb_try_"] button:hover p {
 
 .wb-panel {
     width: 100%;
-    background: #FFFFFF;
+    background: var(--wb-glass-strong);
     border: 1px solid var(--wb-border);
-    border-radius: 26px;
+    border-radius: 24px;
     overflow: hidden;
-    box-shadow: 0 8px 26px rgba(27, 58, 107, 0.1);
+    box-shadow: var(--wb-shadow);
 }
 
 .wb-panel-head {
@@ -441,25 +455,34 @@ div[class*="st-key-wb_try_"] button:hover p {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 18px 26px 16px;
-    background: linear-gradient(135deg, #E6F0FC 0%, #F5F9FE 100%);
+    padding: 20px 26px 18px;
+    background: linear-gradient(
+        135deg,
+        rgba(222, 236, 249, 0.85) 0%,
+        rgba(245, 249, 254, 0.85) 100%
+    );
+    border-bottom: 1px solid var(--wb-border);
 }
 
 .wb-panel-title {
-    font-size: 1.3rem;
-    font-weight: 800;
+    font-family: "Cormorant Garamond", serif;
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.3px;
     color: var(--wb-navy);
 }
 
 .wb-panel-sub {
-    margin-top: 4px;
-    font-size: 0.9rem;
+    margin-top: 5px;
+    font-size: 0.86rem;
     color: var(--wb-text);
 }
 
 .wb-panel-deco {
-    font-size: 2rem;
+    font-size: 1.8rem;
     letter-spacing: 6px;
+    opacity: 0.8;
 }
 
 /* Grid kartu populer */
@@ -478,7 +501,7 @@ div[class*="st-key-wb_try_"] button:hover p {
     background: #FFFFFF;
     border: 1px solid var(--wb-border);
     border-radius: 18px;
-    box-shadow: 0 4px 14px rgba(27, 58, 107, 0.07);
+    box-shadow: 0 3px 12px rgba(36, 70, 101, 0.06);
 }
 
 .wb-pop-media {
@@ -497,7 +520,7 @@ div[class*="st-key-wb_try_"] button:hover p {
 .wb-pop-name {
     min-height: 2.7rem;
     padding: 0 4px;
-    font-size: 0.95rem;
+    font-size: 0.93rem;
     font-weight: 700;
     line-height: 1.35;
     color: var(--wb-navy);
@@ -505,7 +528,7 @@ div[class*="st-key-wb_try_"] button:hover p {
 
 .wb-pop-meta {
     padding: 0 4px;
-    font-size: 0.85rem;
+    font-size: 0.83rem;
     color: var(--wb-text);
 }
 
@@ -528,7 +551,7 @@ div[class*="st-key-wb_try_"] button:hover p {
     align-items: center;
     gap: 16px;
     padding: 14px 0;
-    border-bottom: 1px solid #EDF1F6;
+    border-bottom: 1px solid #E8EEF4;
 }
 
 .wb-pos-row:last-child {
@@ -547,7 +570,7 @@ div[class*="st-key-wb_try_"] button:hover p {
 }
 
 .wb-pos-name {
-    font-size: 0.97rem;
+    font-size: 0.95rem;
     font-weight: 700;
     line-height: 1.35;
     color: var(--wb-navy);
@@ -555,15 +578,15 @@ div[class*="st-key-wb_try_"] button:hover p {
 
 .wb-pos-meta {
     margin-top: 3px;
-    font-size: 0.84rem;
+    font-size: 0.83rem;
     color: var(--wb-text);
 }
 
 .wb-pos-counts {
-    font-size: 0.85rem;
+    font-size: 0.84rem;
     line-height: 1.7;
     color: var(--wb-text);
-    border-left: 1px solid #EDF1F6;
+    border-left: 1px solid #E8EEF4;
     padding-left: 16px;
 }
 
@@ -579,9 +602,9 @@ div[class*="st-key-wb_try_"] button:hover p {
     border-radius: 50%;
 }
 
-.wb-dot-pos { background: #4FB35E; }
-.wb-dot-neu { background: #F2B63C; }
-.wb-dot-neg { background: #E5534B; }
+.wb-dot-pos { background: #3E9B6B; }
+.wb-dot-neu { background: #D9A441; }
+.wb-dot-neg { background: #D2605A; }
 
 .wb-bar {
     display: flex;
@@ -589,18 +612,18 @@ div[class*="st-key-wb_try_"] button:hover p {
     height: 8px;
     border-radius: 999px;
     overflow: hidden;
-    background: #EDF1F6;
+    background: #E8EEF4;
 }
 
-.wb-bar-pos { background: #4FB35E; }
-.wb-bar-neu { background: #F2B63C; }
-.wb-bar-neg { background: #E5534B; }
+.wb-bar-pos { background: #3E9B6B; }
+.wb-bar-neu { background: #D9A441; }
+.wb-bar-neg { background: #D2605A; }
 
 .wb-pct {
     padding: 8px 6px;
     text-align: center;
     border-radius: 14px;
-    background: #E9F6EC;
+    background: #E4F3EA;
     line-height: 1.3;
 }
 
@@ -630,7 +653,11 @@ div[class*="st-key-wb_try_"] button:hover p {
     align-items: center;
     gap: 16px;
     padding: 14px 0;
-    border-bottom: 1px solid #EDF1F6;
+    border-bottom: 1px solid #E8EEF4;
+}
+
+.wb-trip-row:last-child {
+    border-bottom: none;
 }
 
 .wb-trip-time {
@@ -641,7 +668,7 @@ div[class*="st-key-wb_try_"] button:hover p {
 
 .wb-trip-time b {
     display: block;
-    font-size: 0.95rem;
+    font-size: 0.93rem;
     color: var(--wb-navy);
 }
 
@@ -669,14 +696,14 @@ div[class*="st-key-wb_try_"] button:hover p {
 
 .wb-trip-note {
     padding: 12px 26px 18px;
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     color: var(--wb-muted);
 }
 
 .wb-link {
-    font-size: 0.84rem;
+    font-size: 0.83rem;
     font-weight: 600;
-    color: var(--wb-navy) !important;
+    color: var(--wb-accent) !important;
     text-decoration: none !important;
 }
 
@@ -688,6 +715,7 @@ div[class*="st-key-wb_try_"] button:hover p {
 .wb-cards {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    grid-auto-rows: 1fr;
     gap: 14px;
     margin-top: 12px;
 }
@@ -695,17 +723,17 @@ div[class*="st-key-wb_try_"] button:hover p {
 .wb-card {
     display: flex;
     flex-direction: column;
-    background: #FFFFFF;
+    background: var(--wb-glass-strong);
     border: 1px solid var(--wb-border);
     border-radius: 18px;
     overflow: hidden;
-    box-shadow: 0 3px 12px rgba(27, 58, 107, 0.06);
+    box-shadow: 0 3px 12px rgba(36, 70, 101, 0.06);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .wb-card:hover {
     transform: translateY(-3px);
-    box-shadow: 0 10px 24px rgba(27, 58, 107, 0.12);
+    box-shadow: var(--wb-shadow-hover);
 }
 
 .wb-card-cover {
@@ -731,7 +759,7 @@ div[class*="st-key-wb_try_"] button:hover p {
     font-size: 1rem;
     font-weight: 700;
     line-height: 1.35;
-    color: #1F2933;
+    color: var(--wb-navy);
 }
 
 .wb-card-loc {
@@ -745,7 +773,7 @@ div[class*="st-key-wb_try_"] button:hover p {
 }
 
 .wb-card-rating {
-    font-size: 0.88rem;
+    font-size: 0.87rem;
     font-weight: 600;
     color: #B8862B;
 }
@@ -779,8 +807,8 @@ div[class*="st-key-wb_try_"] button:hover p {
 .wb-typing-icon {
     width: 44px;
     height: 44px;
-    border-radius: 50%;
-    background: var(--wb-blue-100);
+    border-radius: 14px;
+    background: linear-gradient(135deg, #DCEBFA, #C4DCF2);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -789,13 +817,13 @@ div[class*="st-key-wb_try_"] button:hover p {
 
 .wb-typing-bubble {
     padding: 12px 18px;
-    background: #FFFFFF;
+    background: var(--wb-glass-strong);
     border: 1px solid var(--wb-border);
     border-radius: 20px 20px 20px 6px;
 }
 
 .wb-typing-text {
-    font-size: 0.9rem;
+    font-size: 0.88rem;
     color: var(--wb-text);
 }
 
@@ -809,7 +837,7 @@ div[class*="st-key-wb_try_"] button:hover p {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #3A5A80;
+    background: var(--wb-accent);
     animation: wb-bounce 1.2s infinite ease-in-out;
 }
 
@@ -826,27 +854,22 @@ div[class*="st-key-wb_try_"] button:hover p {
    10. SARAN & PILIHAN KATEGORI
    ============================================================ */
 
-div[class*="st-key-wb_suggest"],
+/* Pilihan kategori */
 div[class*="st-key-wb_picker"] {
     margin-top: 10px;
-    padding: 18px 20px;
-    background: rgba(255, 255, 255, 0.95);
+    padding: 20px 22px;
+    background: rgba(255, 255, 255, 0.92);
     border: 1px solid var(--wb-border);
-    border-radius: 20px;
-    box-shadow: 0 4px 16px rgba(27, 58, 107, 0.08);
-    gap: 0.5rem;
-}
-
-.wb-suggest-title {
-    font-family: "Inter", "Segoe UI", sans-serif;
-    font-size: 0.88rem;
-    color: var(--wb-text);
+    border-radius: 22px;
+    box-shadow: var(--wb-shadow);
+    gap: 0.6rem;
 }
 
 .wb-picker-title {
-    font-family: "Inter", "Segoe UI", sans-serif;
-    font-size: 1.05rem;
+    font-family: "Cormorant Garamond", serif;
+    font-size: 1.6rem;
     font-weight: 700;
+    line-height: 1.2;
     color: var(--wb-navy);
 }
 
@@ -854,39 +877,33 @@ div[class*="st-key-wb_picker"] {
     font-family: "Inter", "Segoe UI", sans-serif;
     font-size: 0.88rem;
     color: var(--wb-muted);
-    margin-bottom: 4px;
+    margin-bottom: 6px;
 }
 
-div[class*="st-key-wb_sg_"] button,
 div[class*="st-key-wb_cat_"] button,
 .st-key-wb_clear button {
-    background: var(--wb-blue-50) !important;
-    border: 1px solid transparent !important;
-    border-radius: 14px !important;
-    min-height: 2.6rem;
+    background: #FFFFFF !important;
+    border: 1px solid #C9DAE9 !important;
+    border-radius: 16px !important;
+    min-height: 3rem;
+    box-shadow: 0 2px 8px rgba(36, 70, 101, 0.06);
     transition: all 0.2s ease;
 }
 
-div[class*="st-key-wb_sg_"] button {
-    justify-content: flex-start;
-}
-
-div[class*="st-key-wb_sg_"] button p,
 div[class*="st-key-wb_cat_"] button p,
 .st-key-wb_clear button p {
-    color: var(--wb-navy) !important;
-    -webkit-text-fill-color: var(--wb-navy) !important;
+    color: var(--wb-navy-2) !important;
+    -webkit-text-fill-color: var(--wb-navy-2) !important;
     font-size: 0.92rem;
     font-weight: 500;
 }
 
-div[class*="st-key-wb_sg_"] button:hover,
 div[class*="st-key-wb_cat_"] button:hover,
 .st-key-wb_clear button:hover {
     background: var(--wb-navy) !important;
+    border-color: var(--wb-navy) !important;
 }
 
-div[class*="st-key-wb_sg_"] button:hover p,
 div[class*="st-key-wb_cat_"] button:hover p,
 .st-key-wb_clear button:hover p {
     color: #FFFFFF !important;
@@ -897,8 +914,9 @@ div[class*="st-key-wb_cat_"] button:hover p,
     display: inline-block;
     padding: 8px 16px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.9);
-    font-size: 0.9rem;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid var(--wb-border);
+    font-size: 0.88rem;
     font-weight: 600;
     color: var(--wb-navy);
 }
@@ -908,20 +926,44 @@ div[class*="st-key-wb_cat_"] button:hover p,
    11. CHAT INPUT, FOOTER, RESPONSIVE
    ============================================================ */
 
-[data-testid="stBottom"] > div {
+[data-testid="stBottom"],
+[data-testid="stBottom"] > div,
+[data-testid="stBottomBlockContainer"] {
     background: transparent !important;
 }
 
-[data-testid="stChatInput"] {
-    background: #FFFFFF !important;
-    border: 1px solid #D3DFEC !important;
-    border-radius: 999px !important;
-    box-shadow: 0 8px 26px rgba(27, 58, 107, 0.14);
+/* lebar input mengikuti lebar konten */
+[data-testid="stBottomBlockContainer"] {
+    max-width: 1120px;
+    margin: 0 auto;
 }
 
-[data-testid="stChatInput"] textarea {
-    font-size: 0.97rem;
-    color: #1F2933;
+[data-testid="stChatInput"],
+[data-testid="stChatInput"] > div {
+    border-radius: 999px !important;
+}
+
+[data-testid="stChatInput"] > div {
+    background: rgba(255, 255, 255, 0.96) !important;
+    border: 1px solid #C9DAE9 !important;
+    box-shadow: 0 8px 26px rgba(36, 70, 101, 0.14) !important;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* ganti outline merah bawaan Streamlit */
+[data-testid="stChatInput"] > div:focus-within {
+    border-color: #7898B7 !important;
+    box-shadow:
+        0 8px 26px rgba(36, 70, 101, 0.14),
+        0 0 0 3px rgba(120, 152, 183, 0.22) !important;
+}
+
+[data-testid="stChatInput"] textarea,
+[data-testid="stChatInput"] textarea:focus {
+    outline: none !important;
+    box-shadow: none !important;
+    font-size: 0.96rem;
+    color: var(--wb-navy);
 }
 
 [data-testid="stChatInput"] textarea::placeholder {
@@ -947,10 +989,33 @@ div[class*="st-key-wb_cat_"] button:hover p,
     margin: 26px auto 0;
     padding: 6px 16px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.75);
     font-size: 0.8rem;
     color: var(--wb-muted);
 }
+
+/* ============================================================
+   12. CHATBOT LAYOUT
+   ============================================================ */
+
+/* Saat chat kosong: kartu menu turun ke atas kotak ketik */
+.wb-welcome-spacer {
+    height: max(24px, calc(100vh - 800px));
+}
+
+/* Teks bubble: tanpa jarak berlebih di atas/bawah */
+[data-testid="stChatMessageContent"] [data-testid="stVerticalBlock"] {
+    gap: 0.4rem;
+}
+
+[data-testid="stChatMessageContent"] p {
+    margin: 0;
+}
+
+[data-testid="stChatMessageContent"] p + p {
+    margin-top: 0.6rem;
+}
+
 
 @media (max-width: 900px) {
 
@@ -999,11 +1064,19 @@ div[class*="st-key-wb_cat_"] button:hover p,
     }
 
     .wb-hero {
-        padding: 20px;
+        padding: 22px 2px 14px;
+    }
+
+    .wb-hero-title {
+        font-size: 3rem;
     }
 
     .wb-panel-head {
         padding: 16px 18px;
+    }
+
+    .wb-panel-title {
+        font-size: 1.5rem;
     }
 
     .wb-panel-deco {
@@ -1017,5 +1090,18 @@ div[class*="st-key-wb_cat_"] button:hover p,
     ) [data-testid="stChatMessageContent"] {
         max-width: 96%;
         padding: 12px 16px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .wb-online-dot,
+    .wb-dots span {
+        animation: none;
+    }
+
+    div[class*="st-key-wb_qp_card_"],
+    .wb-card {
+        transition: none;
     }
 }

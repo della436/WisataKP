@@ -1,4 +1,3 @@
-
 from pathlib import Path
 import streamlit as st
 import pandas as pd
@@ -57,52 +56,21 @@ LABELED_REVIEW_CANDIDATES = [
 # 03. GLOBAL CSS
 # ============================================================
 
+@st.cache_data(show_spinner=False)
+def encode_image(path_string):
+    """Encode gambar ke base64 (di-cache supaya tidak diulang tiap rerun)."""
+
+    return base64.b64encode(
+        Path(path_string).read_bytes()
+    ).decode("utf-8")
+
+
 def load_global_css():
 
     css_files = [
         MAIN_CSS_PATH,
         DASHBOARD_CSS_PATH
     ]
-
-    background_css = ""
-
-    # --------------------------------------------------------
-    # LOAD BACKGROUND IMAGE
-    # --------------------------------------------------------
-
-    if BACKGROUND_IMAGE_PATH.exists():
-
-        with open(BACKGROUND_IMAGE_PATH, "rb") as image_file:
-
-            image_base64 = base64.b64encode(
-                image_file.read()
-            ).decode()
-
-        background_css = f"""
-        <style>
-        .stApp {{
-            background-image:
-                linear-gradient(
-                    rgba(245, 249, 253, 0.10),
-                    rgba(245, 249, 253, 0.10)
-                ),
-                url("data:image/jpeg;base64,{image_base64}");
-
-            background-size: cover;
-            background-position: center top;
-            background-repeat: no-repeat;
-            background-attachment: fixed;
-        }}
-        </style>
-        """
-
-    else:
-
-        st.warning(
-            "Background image tidak ditemukan. "
-            "Pastikan file kp.png "
-            "berada di folder assets/images/kp.png"
-        )
 
     # --------------------------------------------------------
     # LOAD CSS FILES
@@ -122,14 +90,53 @@ def load_global_css():
             )
 
     # --------------------------------------------------------
-    # APPLY BACKGROUND IMAGE
+    # BACKGROUND - SAMA DENGAN HALAMAN EXPLORE DESTINATIONS
     # --------------------------------------------------------
 
-    if background_css:
+    if BACKGROUND_IMAGE_PATH.exists():
+
+        mime = (
+            "image/png"
+            if BACKGROUND_IMAGE_PATH.suffix.lower() == ".png"
+            else "image/jpeg"
+        )
+
+        encoded_background = encode_image(
+            str(BACKGROUND_IMAGE_PATH)
+        )
 
         st.markdown(
-            background_css,
+            f"""
+            <style>
+            [data-testid="stMain"] {{
+                background-image:
+                    linear-gradient(
+                        rgba(240, 247, 253, 0.72),
+                        rgba(240, 247, 253, 0.82)
+                    ),
+                    url("data:{mime};base64,{encoded_background}") !important;
+
+                background-size: cover !important;
+                background-position: center !important;
+                background-repeat: no-repeat !important;
+                background-attachment: fixed !important;
+            }}
+
+            [data-testid="stMainBlockContainer"],
+            [data-testid="stHeader"] {{
+                background: transparent !important;
+            }}
+            </style>
+            """,
             unsafe_allow_html=True
+        )
+
+    else:
+
+        st.warning(
+            "Background image tidak ditemukan. "
+            "Pastikan file kp.png "
+            "berada di folder assets/images/kp.png"
         )
 
 
@@ -629,37 +636,62 @@ if (
 # 12. DASHBOARD HEADER
 # ============================================================
 
-st.markdown("### EXPLORE KULON PROGO")
+def section_header(title, caption=""):
+    """Judul section + garis tipis (menggantikan st.divider)."""
 
-st.caption(
-    "Discover tourism destinations and visitor insights "
-    "across Kulon Progo."
+    st.html(
+        f"""
+        <div class="dash-section">
+            <div class="dash-section-title">{html.escape(title)}</div>
+            <div class="dash-section-caption">{html.escape(caption)}</div>
+        </div>
+        """
+    )
+
+
+st.html(
+    """
+    <div class="dash-hero">
+        <div class="dash-eyebrow">DISCOVER · EXPLORE · EXPERIENCE</div>
+        <div class="dash-title">EXPLORE KULON PROGO</div>
+        <div class="dash-subtitle">
+            Discover tourism destinations and visitor insights
+            across Kulon Progo.
+        </div>
+    </div>
+    """
 )
-
-st.divider()
 
 # ============================================================
 # 13. KPI SUMMARY
 # ============================================================
 
-st.markdown("## KPI Summary")
-st.caption("Ringkasan data destinasi dan ulasan pengunjung.")
+section_header(
+    "KPI Summary",
+    "Ringkasan data destinasi dan ulasan pengunjung."
+)
 
 kpi_col1, kpi_col2 = st.columns(2, gap="medium")
 
 kpi_html_1 = f"""
 <div class="kpi-card kpi-destination">
 
-    <div class="kpi-label">
-        TOTAL DESTINASI
-    </div>
+    <div class="kpi-icon">📍</div>
 
-    <div class="kpi-value">
-        {format_number(total_destinations)}
-    </div>
+    <div class="kpi-body">
 
-    <div class="kpi-description">
-        Destinasi wisata yang terdaftar di Kulon Progo
+        <div class="kpi-label">
+            Total Destinasi
+        </div>
+
+        <div class="kpi-value">
+            {format_number(total_destinations)}
+        </div>
+
+        <div class="kpi-description">
+            Destinasi wisata yang terdaftar di Kulon Progo
+        </div>
+
     </div>
 
 </div>
@@ -668,16 +700,22 @@ kpi_html_1 = f"""
 kpi_html_2 = f"""
 <div class="kpi-card kpi-review">
 
-    <div class="kpi-label">
-        TOTAL ULASAN
-    </div>
+    <div class="kpi-icon">💬</div>
 
-    <div class="kpi-value">
-        {format_number(total_reviews)}
-    </div>
+    <div class="kpi-body">
 
-    <div class="kpi-description">
-        Ulasan pengunjung yang terkumpul dalam dataset
+        <div class="kpi-label">
+            Total Ulasan
+        </div>
+
+        <div class="kpi-value">
+            {format_number(total_reviews)}
+        </div>
+
+        <div class="kpi-description">
+            Ulasan pengunjung yang terkumpul dalam dataset
+        </div>
+
     </div>
 
 </div>
@@ -689,16 +727,12 @@ with kpi_col1:
 with kpi_col2:
     st.html(kpi_html_2)
 
-st.divider()
 # ============================================================
 # 14. TOP 3 HIGHEST RATED DESTINATIONS
 # ============================================================
 
-st.markdown(
-    "## Top 3 Highest Rated Destinations"
-)
-
-st.caption(
+section_header(
+    "Top 3 Highest Rated Destinations",
     "Peringkat berdasarkan rating tertinggi dan jumlah "
     "ulasan sebagai penentu jika rating sama."
 )
@@ -722,26 +756,26 @@ def create_rating_card(row, rank):
     if rank == 1:
 
         medal = "🏆"
-        rank_label = "RANK 01"
+        rank_label = "Peringkat 1"
         card_class = "rank-1"
 
         badge = """
         <div class="rating-badge">
-            TOP RATED
+            Top Rated
         </div>
         """
 
     elif rank == 2:
 
         medal = "🥈"
-        rank_label = "RANK 02"
+        rank_label = "Peringkat 2"
         card_class = "rank-2"
         badge = ""
 
     else:
 
         medal = "🥉"
-        rank_label = "RANK 03"
+        rank_label = "Peringkat 3"
         card_class = "rank-3"
         badge = ""
 
@@ -781,73 +815,32 @@ def create_rating_card(row, rank):
 
 # ------------------------------------------------------------
 # DISPLAY TOP 3
-# RANK 2 - RANK 1 - RANK 3
+# URUTAN TAMPIL: RANK 2 - RANK 1 - RANK 3 (podium)
 # ------------------------------------------------------------
 
 if not top_rating.empty:
 
     if len(top_rating) >= 3:
-
-        col_rank2, col_rank1, col_rank3 = st.columns(
-            [1, 1.15, 1],
-            gap="medium"
-        )
-
-        with col_rank2:
-            st.html(
-                create_rating_card(
-                    top_rating.iloc[1],
-                    2
-                )
-            )
-
-        with col_rank1:
-            st.html(
-                create_rating_card(
-                    top_rating.iloc[0],
-                    1
-                )
-            )
-
-        with col_rank3:
-            st.html(
-                create_rating_card(
-                    top_rating.iloc[2],
-                    3
-                )
-            )
+        podium_order = [1, 0, 2]
 
     elif len(top_rating) == 2:
-
-        col_rank2, col_rank1 = st.columns(
-            [1, 1.15],
-            gap="medium"
-        )
-
-        with col_rank2:
-            st.html(
-                create_rating_card(
-                    top_rating.iloc[1],
-                    2
-                )
-            )
-
-        with col_rank1:
-            st.html(
-                create_rating_card(
-                    top_rating.iloc[0],
-                    1
-                )
-            )
+        podium_order = [1, 0]
 
     else:
+        podium_order = [0]
 
-        st.html(
-            create_rating_card(
-                top_rating.iloc[0],
-                1
-            )
-        )
+    podium_cards = "".join(
+        create_rating_card(top_rating.iloc[index], index + 1)
+        for index in podium_order
+    )
+
+    st.html(
+        f"""
+        <div class="podium podium-{len(podium_order)}">
+            {podium_cards}
+        </div>
+        """
+    )
 
 else:
 
@@ -857,15 +850,14 @@ else:
         "dan jumlah review."
     )
 
-st.divider()
-st.divider()
-
 # ============================================================
 # 15. SENTIMENT INSIGHT
 # ============================================================
 
-st.markdown("## Sentiment Insight")
-st.caption("Ringkasan hasil analisis sentimen ulasan pengunjung.")
+section_header(
+    "Sentiment Insight",
+    "Ringkasan hasil analisis sentimen ulasan pengunjung."
+)
 
 if not sentiment_raw.empty and SENTIMENT_COL is not None:
 
@@ -917,16 +909,20 @@ if not sentiment_raw.empty and SENTIMENT_COL is not None:
                     Jumlah ulasan
                 </div>
 
-                <div class="sentiment-stat">
-                    <div class="sentiment-stat-value">
-                        {percentage:.1f}%
-                    </div>
+            </div>
 
-                    <div class="sentiment-stat-label">
-                        dari data berlabel
-                    </div>
+            <div class="sentiment-meter">
+                <span style="width: {percentage:.1f}%"></span>
+            </div>
+
+            <div class="sentiment-stat">
+                <div class="sentiment-stat-value">
+                    {percentage:.1f}%
                 </div>
 
+                <div class="sentiment-stat-label">
+                    dari data berlabel
+                </div>
             </div>
 
         </div>
@@ -947,3 +943,11 @@ else:
 # ============================================================
 # 16. FOOTER
 # ============================================================
+
+st.html(
+    """
+    <div class="dash-footer">
+        Powered by WisataKP · Explore more, travel better
+    </div>
+    """
+)

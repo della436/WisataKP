@@ -27,3 +27,4 @@ __pycache__/
 # Temporary files
 *.log
 .ipynb_checkpoints/
+data/events/seen_events.json

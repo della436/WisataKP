@@ -1,262 +1,411 @@
+/* =========================================================
+   WISATAKP - DASHBOARD
+   File: styles/dashboard.css
+   Isi:
+   1. Font & token warna (sama dengan Explore Destinations)
+   2. Layout halaman
+   3. Hero
+   4. Judul section
+   5. KPI Summary
+   6. Top 3 Highest Rated (podium)
+   7. Sentiment Insight
+   8. Footer & responsive
+   Catatan: gambar background dipasang dari app.py
+   (lewat [data-testid="stMain"]) agar sama seperti Explore.
+   ========================================================= */
 
-/* ==========================================================
-   TOP 3 HIGHEST RATED DESTINATIONS
-========================================================== */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
 
-.rating-card {
+
+/* =========================================================
+   1. TOKEN
+   ========================================================= */
+
+:root {
+    --kp-ink: #173650;
+    --kp-ink-2: #193B58;
+    --kp-text: #526B82;
+    --kp-muted: #68839E;
+    --kp-line: rgba(213, 225, 235, 0.95);
+    --kp-glass: rgba(255, 255, 255, 0.78);
+    --kp-glass-strong: rgba(255, 255, 255, 0.90);
+    --kp-accent: #3478B8;
+    --kp-gold: #D9A441;
+
+    --kp-pos: #3E9B6B;
+    --kp-neu: #D9A441;
+    --kp-neg: #D2605A;
+
+    --kp-shadow: 0 6px 22px rgba(36, 70, 101, 0.07);
+    --kp-shadow-hover: 0 12px 28px rgba(36, 70, 101, 0.12);
+}
+
+
+/* =========================================================
+   2. LAYOUT HALAMAN
+   ========================================================= */
+
+[data-testid="stMainBlockContainer"] {
+    max-width: 1180px;
+    padding-top: 2rem;
+    padding-bottom: 4rem;
+}
+
+.dash-hero,
+.dash-section,
+.kpi-card,
+.podium,
+.sentiment-wrapper,
+.dash-footer {
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+}
+
+/* Alert bawaan Streamlit ikut selaras */
+[data-testid="stAlert"] {
+    border-radius: 14px !important;
+    border: 1px solid #D8E3ED !important;
+}
+
+
+/* =========================================================
+   3. HERO
+   ========================================================= */
+
+.dash-hero {
+    padding: 30px 6px 14px;
+}
+
+.dash-eyebrow {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 3px;
+    color: var(--kp-muted);
+    margin-bottom: 14px;
+}
+
+.dash-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: clamp(3rem, 6vw, 5.3rem);
+    font-weight: 600;
+    line-height: 0.95;
+    letter-spacing: -1.5px;
+    color: var(--kp-ink);
+}
+
+.dash-subtitle {
+    max-width: 560px;
+    margin-top: 20px;
+    font-size: 0.97rem;
+    line-height: 1.8;
+    color: var(--kp-text);
+}
+
+
+/* =========================================================
+   4. JUDUL SECTION
+   ========================================================= */
+
+.dash-section {
+    margin: 46px 0 18px;
+}
+
+.dash-section-title {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    font-size: 1.45rem;
+    font-weight: 600;
+    letter-spacing: -0.4px;
+    color: var(--kp-ink-2);
+}
+
+/* garis tipis = pemisah antar section */
+.dash-section-title::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(
+        90deg,
+        rgba(120, 145, 165, 0.35),
+        rgba(120, 145, 165, 0)
+    );
+}
+
+.dash-section-caption {
+    margin-top: 6px;
+    max-width: 640px;
+    font-size: 0.88rem;
+    line-height: 1.6;
+    color: var(--kp-muted);
+}
+
+
+/* =========================================================
+   5. KPI SUMMARY
+   ========================================================= */
+
+.kpi-card {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+
     box-sizing: border-box;
     width: 100%;
-    min-height: 245px;
-    padding: 24px 18px;
-    border-radius: 20px;
-    text-align: center;
+    min-height: 150px;
+    padding: 26px 30px;
+
+    background: var(--kp-glass);
+    border: 1px solid var(--kp-line);
+    border-radius: 22px;
+    box-shadow: var(--kp-shadow);
+
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.kpi-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--kp-shadow-hover);
+}
+
+.kpi-icon {
+    flex: 0 0 auto;
+    width: 62px;
+    height: 62px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    border-radius: 18px;
+    font-size: 1.7rem;
+}
+
+.kpi-destination .kpi-icon {
+    background: linear-gradient(135deg, #DCEBFA, #C9DFF4);
+}
+
+.kpi-review .kpi-icon {
+    background: linear-gradient(135deg, #DDF0EA, #C8E5DB);
+}
+
+.kpi-body {
+    min-width: 0;
+}
+
+.kpi-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--kp-muted);
+    margin-bottom: 4px;
+}
+
+.kpi-value {
+    font-family: 'Cormorant Garamond', serif;
+    font-variant-numeric: lining-nums;
+    font-size: clamp(2.8rem, 4.2vw, 3.9rem);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -1px;
+    color: var(--kp-ink);
+}
+
+.kpi-description {
+    margin-top: 10px;
+    font-size: 0.84rem;
+    line-height: 1.55;
+    color: var(--kp-text);
+}
+
+
+/* =========================================================
+   6. TOP 3 HIGHEST RATED (PODIUM)
+   Urutan tampil: rank 2 - rank 1 - rank 3
+   ========================================================= */
+
+.podium {
+    display: grid;
+    gap: 20px;
+    align-items: end;
+}
+
+.podium-3 { grid-template-columns: 1fr 1.18fr 1fr; }
+.podium-2 { grid-template-columns: 1fr 1.18fr; }
+.podium-1 { grid-template-columns: minmax(0, 440px); }
+
+.rating-card {
+    position: relative;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 255px;
+    padding: 26px 20px 24px;
 
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
+    text-align: center;
 
-    border: 1px solid #DCEAF7;
-    box-shadow: 0 5px 18px rgba(35, 79, 120, 0.07);
+    background: var(--kp-glass);
+    border: 1px solid var(--kp-line);
+    border-radius: 22px;
+    box-shadow: var(--kp-shadow);
 
-    transition: transform 0.25s ease,
-                box-shadow 0.25s ease;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
 
 .rating-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 24px rgba(35, 79, 120, 0.13);
+    transform: translateY(-4px);
+    box-shadow: var(--kp-shadow-hover);
 }
 
-/* RANK 1 */
+/* RANK 1 - tertinggi dan paling menonjol */
 .rating-card.rank-1 {
-    min-height: 275px;
-
+    min-height: 315px;
+    padding-top: 32px;
     background: linear-gradient(
-        145deg,
-        #DCECF9,
-        #F3F8FD
+        160deg,
+        rgba(255, 255, 255, 0.96) 0%,
+        rgba(222, 236, 249, 0.92) 100%
     );
-
     border: 1px solid #A8CBE8;
-
-    box-shadow: 0 8px 24px rgba(52, 120, 184, 0.12);
+    box-shadow: 0 14px 34px rgba(52, 120, 184, 0.16);
+    overflow: hidden;
 }
 
-/* RANK 2 */
-.rating-card.rank-2 {
-    background: #F0F6FC;
+.rating-card.rank-1::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #E9C46A, var(--kp-gold), #E9C46A);
 }
 
-/* RANK 3 */
-.rating-card.rank-3 {
-    background: #EAF3FB;
-}
-
-/* MEDAL */
 .rating-medal {
-    font-size: 36px;
+    width: 56px;
+    height: 56px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 3px 10px rgba(36, 70, 101, 0.1);
+    font-size: 1.7rem;
+}
+
+.rank-1 .rating-medal {
+    width: 66px;
+    height: 66px;
+    font-size: 2rem;
+}
+
+.rating-rank {
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    color: var(--kp-muted);
     margin-bottom: 8px;
 }
 
-/* RANK LABEL */
-.rating-rank {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 1.5px;
-
-    color: #3478B8;
-
-    margin-bottom: 12px;
-}
-
-.rank-1 .rating-rank {
-    color: #245D91;
-}
-
-/* DESTINATION NAME */
 .rating-name {
-    font-size: 17px;
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 1.4rem;
     font-weight: 700;
-
-    color: #173B67;
-
-    line-height: 1.5;
+    line-height: 1.2;
+    color: var(--kp-ink);
     margin-bottom: 12px;
-
     overflow-wrap: anywhere;
 }
 
 .rank-1 .rating-name {
-    font-size: 19px;
+    font-size: 1.7rem;
 }
 
-/* RATING SCORE */
 .rating-score {
-    font-size: 28px;
-    font-weight: 800;
-    color: #3478B8;
+    font-family: 'Cormorant Garamond', serif;
+    font-variant-numeric: lining-nums;
+    font-size: 2.1rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--kp-accent);
 }
 
 .rank-1 .rating-score {
-    font-size: 32px;
+    font-size: 2.6rem;
     color: #245D91;
 }
 
-/* STAR */
 .rating-star {
-    color: #E6AC38;
+    color: var(--kp-gold);
 }
 
-/* CAPTION */
 .rating-caption {
-    font-size: 12px;
-    color: #7890AA;
-    margin-top: 5px;
+    margin-top: 6px;
+    font-size: 0.74rem;
+    color: var(--kp-muted);
 }
 
-/* TOP RATED BADGE */
-.rating-badge {
-    display: inline-block;
-
+.rating-review-count {
     margin-top: 12px;
-    padding: 5px 12px;
+    padding: 5px 13px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.75);
+    border: 1px solid var(--kp-line);
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--kp-text);
+}
 
-    border-radius: 20px;
-
-    background: #3478B8;
+.rating-badge {
+    margin-top: 12px;
+    padding: 5px 14px;
+    border-radius: 999px;
+    background: var(--kp-ink);
     color: #FFFFFF;
-
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.8px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
 }
 
-/* ==========================================================
-   KPI SUMMARY - MINIMAL & ELEGANT
-   ========================================================== */
 
-.kpi-card {
-    width: 100%;
-    min-height: 165px;
-    box-sizing: border-box;
-
-    padding: 25px 28px;
-    border-radius: 20px;
-
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-
-    border: 1px solid rgba(168, 203, 232, 0.5);
-
-    transition: all 0.25s ease;
-}
-
-.kpi-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 22px rgba(35, 79, 120, 0.08);
-}
-
-/* CARD COLORS */
-
-.kpi-destination {
-    background: linear-gradient(
-        135deg,
-        #E8F2FC 0%,
-        #D9EAF8 100%
-    );
-}
-
-.kpi-review {
-    background: linear-gradient(
-        135deg,
-        #DFEDFA 0%,
-        #D0E4F5 100%
-    );
-}
-
-/* LABEL */
-
-.kpi-label {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 1.2px;
-    color: #6484A3;
-
-    margin-bottom: 12px;
-}
-
-/* NUMBER */
-
-.kpi-value {
-    font-size: 36px;
-    font-weight: 800;
-    color: #1C456F;
-
-    line-height: 1.2;
-    letter-spacing: -1px;
-}
-
-/* DESCRIPTION */
-
-.kpi-description {
-    font-size: 12px;
-    font-weight: 400;
-    color: #6B87A1;
-
-    margin-top: 10px;
-    line-height: 1.5;
-}
-
-/* ==========================================================
-   SENTIMENT INSIGHT
-   ========================================================== */
+/* =========================================================
+   7. SENTIMENT INSIGHT
+   ========================================================= */
 
 .sentiment-wrapper {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 20px;
-    font-family: inherit;
 }
 
 .sentiment-item {
-    min-height: 200px;
-    padding: 25px;
-    border-radius: 20px;
-    box-sizing: border-box;
+    --tone: var(--kp-accent);
+    --tone-soft: #DCEBFA;
 
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    box-sizing: border-box;
+    min-height: 220px;
+    padding: 24px 26px;
 
-    border: 1px solid rgba(140, 180, 215, 0.35);
+    background: var(--kp-glass);
+    border: 1px solid var(--kp-line);
+    border-radius: 22px;
+    box-shadow: var(--kp-shadow);
 
-    transition:
-        transform .2s ease,
-        box-shadow .2s ease;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
 
 .sentiment-item:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 10px 25px rgba(30, 70, 110, .09);
+    transform: translateY(-3px);
+    box-shadow: var(--kp-shadow-hover);
 }
 
-/* Background */
-
-.sentiment-item.positive {
-    background: #E8F3FC;
-}
-
-.sentiment-item.neutral {
-    background: #D8EAF8;
-}
-
-.sentiment-item.negative {
-    background: #C9E0F2;
-}
-
-/* Header */
+.sentiment-item.positive { --tone: var(--kp-pos); --tone-soft: #DDF0E5; }
+.sentiment-item.neutral  { --tone: var(--kp-neu); --tone-soft: #F8EBCF; }
+.sentiment-item.negative { --tone: var(--kp-neg); --tone-soft: #F7DEDB; }
 
 .sentiment-item-top {
     display: flex;
@@ -272,61 +421,147 @@
     justify-content: center;
 
     border-radius: 14px;
-    background: rgba(255, 255, 255, .4);
-
-    font-size: 23px;
+    background: var(--tone-soft);
+    font-size: 1.4rem;
 }
 
 .sentiment-name {
-    color: #28577F;
-    font-size: 15px;
-    font-weight: 700;
+    font-size: 0.98rem;
+    font-weight: 600;
+    color: var(--kp-ink-2);
 }
-
-/* Data */
 
 .sentiment-data {
-    margin-top: 22px;
-}
-
-.sentiment-total {
-    font-size: 38px;
-    line-height: 1.15;
-    font-weight: 800;
-    letter-spacing: -1px;
-    color: #173B67;
-}
-
-.sentiment-caption {
-    font-size: 12px;
-    color: #6885A0;
-    margin-top: 6px;
-}
-
-/* Percentage */
-
-.sentiment-stat {
-    display: flex;
-    align-items: center;
-    gap: 6px;
     margin-top: 20px;
 }
 
+.sentiment-total {
+    font-family: 'Cormorant Garamond', serif;
+    font-variant-numeric: lining-nums;
+    font-size: 3.2rem;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -1px;
+    color: var(--kp-ink);
+}
+
+.sentiment-caption {
+    margin-top: 6px;
+    font-size: 0.8rem;
+    color: var(--kp-muted);
+}
+
+/* bar proporsi */
+.sentiment-meter {
+    height: 7px;
+    margin-top: auto;
+    border-radius: 999px;
+    background: rgba(120, 145, 165, 0.18);
+    overflow: hidden;
+}
+
+.sentiment-data + .sentiment-meter {
+    margin-top: 22px;
+}
+
+.sentiment-meter span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--tone);
+}
+
+.sentiment-stat {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    margin-top: 12px;
+}
+
 .sentiment-stat-value {
-    font-size: 14px;
+    font-size: 1rem;
     font-weight: 700;
-    color: #2D6FA8;
+    color: var(--tone);
 }
 
 .sentiment-stat-label {
-    font-size: 11px;
-    color: #6885A0;
+    font-size: 0.78rem;
+    color: var(--kp-muted);
 }
 
-/* Responsive */
 
-@media (max-width: 768px) {
+/* =========================================================
+   8. FOOTER & RESPONSIVE
+   ========================================================= */
+
+.dash-footer {
+    width: fit-content;
+    margin: 48px auto 0;
+    padding: 6px 16px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.7);
+    font-size: 0.8rem;
+    color: var(--kp-muted);
+}
+
+@media (max-width: 900px) {
+
+    .podium-3,
+    .podium-2,
+    .podium-1 {
+        grid-template-columns: 1fr;
+    }
+
+    /* rank 1 tampil paling atas di layar kecil */
+    .rating-card.rank-1 {
+        order: -1;
+        min-height: 270px;
+    }
+
+    .rating-card {
+        min-height: 220px;
+    }
+
     .sentiment-wrapper {
         grid-template-columns: 1fr;
+    }
+
+    .sentiment-item {
+        min-height: 0;
+    }
+}
+
+@media (max-width: 768px) {
+
+    .dash-hero {
+        padding: 18px 2px 8px;
+    }
+
+    .dash-title {
+        font-size: 3rem;
+    }
+
+    .dash-section {
+        margin-top: 36px;
+    }
+
+    .kpi-card {
+        padding: 20px;
+        gap: 16px;
+    }
+
+    .kpi-icon {
+        width: 52px;
+        height: 52px;
+        font-size: 1.4rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .kpi-card,
+    .rating-card,
+    .sentiment-item {
+        transition: none;
     }
 }
